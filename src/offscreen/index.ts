@@ -150,7 +150,9 @@ const run = async (request: JobRequest) => {
 			await send({ from: 'engine', type: 'canceled', jobId: request.jobId });
 		} else {
 			console.error(error);
-			await send({ from: 'engine', type: 'failed', jobId: request.jobId, error: error instanceof Error ? error.message : String(error) });
+			// Browsers report a broken connection only as "network error"; naming the server makes it actionable.
+			const reason = error instanceof Error ? error.message : String(error);
+			await send({ from: 'engine', type: 'failed', jobId: request.jobId, error: `${reason} (${new URL(request.url).host})` });
 		}
 	}
 };

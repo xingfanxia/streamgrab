@@ -6,6 +6,7 @@ import { BufferTarget } from 'mediabunny';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { summarizeHls } from '../src/core/m3u8';
 import { summarizeDash } from '../src/core/mpd';
+import { downloadFile } from '../src/engine/file';
 import { downloadDash, downloadHls, downloadPair, type EngineHooks } from '../src/engine/remux';
 import { serveFixtures, type FixtureServer } from './serve';
 
@@ -100,6 +101,87 @@ describe.skipIf(!existsSync(FIXTURES))('engine against local fixtures', () => {
 		const target = new BufferTarget();
 		await downloadPair(`${server.origin}/picture.mp4`, `${server.origin}/sound.mp4`, target, hooks());
 		expectAv(probe('pair.mp4', target.buffer!), 360);
+	});
+
+	describe('plain files from awkward servers', () => {
+		const source = () => readFileSync(join(FIXTURES, 'direct.mp4'));
+		/** Serves the fixture through `respond`, which decides how each request misbehaves. */
+		const awkward = async (respond: (range: [number, number] | null, file: Buffer, response: import('node:http').ServerResponse) => void) => {
+			const file = source();
+			const server = createServer((request, response) => {
+				const match = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range ?? '');
+				respond(match ? [Number(match[1]), match[2] ? Math.min(Number(match[2]), file.length - 1) : file.length - 1] : null, file, response);
+			});
+			await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+			return { url: `http://127.0.0.1:${(server.address() as { port: number }).port}/v.mp4`, close: () => server.close() };
+		};
+		const fetchAll = async (url: string) => {
+			const chunks: Uint8Array[] = [];
+			await downloadFile(url, async chunk => {
+				chunks.push(chunk.slice());
+			}, hooks());
+			return Buffer.concat(chunks);
+		};
+
+		it('keeps going when each answer carries less than was asked for', async () => {
+			const server = await awkward((range, file, response) => {
+				const [start, end] = range!;
+				const stop = Math.min(end, start + 99_999);
+				response.writeHead(206, { 'Content-Range': `bytes ${start}-${stop}/${file.length}`, 'Content-Length': stop - start + 1 }).end(file.subarray(start, stop + 1));
+			});
+			try {
+				expect((await fetchAll(server.url)).equals(source())).toBe(true);
+			} finally {
+				server.close();
+			}
+		});
+
+		it('resumes after the connection is dropped mid-transfer', async () => {
+			let drops = 0;
+			const server = await awkward((range, file, response) => {
+				const [start, end] = range!;
+				response.writeHead(206, { 'Content-Range': `bytes ${start}-${end}/${file.length}`, 'Content-Length': end - start + 1 });
+				if (drops < 2) {
+					drops++;
+					response.write(file.subarray(start, start + 150_000), () => response.destroy());
+				} else {
+					response.end(file.subarray(start, end + 1));
+				}
+			});
+			try {
+				expect((await fetchAll(server.url)).equals(source())).toBe(true);
+				expect(drops).toBe(2);
+			} finally {
+				server.close();
+			}
+		}, 20_000);
+
+		it('downloads from a server that ignores Range', async () => {
+			const server = await awkward((_range, file, response) => {
+				response.writeHead(200, { 'Content-Length': file.length }).end(file);
+			});
+			try {
+				expect((await fetchAll(server.url)).equals(source())).toBe(true);
+			} finally {
+				server.close();
+			}
+		});
+
+		it('fails rather than saving a truncated file when the rest never comes', async () => {
+			const server = await awkward((range, file, response) => {
+				const [start] = range!;
+				if (start === 0) {
+					response.writeHead(206, { 'Content-Range': `bytes 0-74999/${file.length}`, 'Content-Length': 75_000 }).end(file.subarray(0, 75_000));
+				} else {
+					response.writeHead(206, { 'Content-Range': `bytes ${start}-${start}/${file.length}`, 'Content-Length': 0 }).end();
+				}
+			});
+			try {
+				await expect(fetchAll(server.url)).rejects.toThrow(/75000 of \d+ bytes/);
+			} finally {
+				server.close();
+			}
+		}, 20_000);
 	});
 
 	it('finalizes a playable partial file when stopped midway', async () => {
