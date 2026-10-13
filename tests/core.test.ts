@@ -120,3 +120,15 @@ describe('cleanTitle', () => {
 		expect(cleanTitle('Scores (2026)')).toBe('Scores (2026)');
 	});
 });
+
+describe('site lists', () => {
+	it('treats fragment sites as page sites, and keeps network detection on the rest', async () => {
+		const { isFragmentSite, isPageSite } = await import('../src/core/sites');
+		expect(isFragmentSite('https://www.youtube.com/watch?v=x')).toBe(true);
+		expect(isPageSite('https://www.youtube.com/watch?v=x')).toBe(true);
+		expect(isFragmentSite('https://www.xiaohongshu.com/explore/1')).toBe(false);
+		expect(isPageSite('https://www.xiaohongshu.com/explore/1')).toBe(true);
+		expect(isPageSite('https://notyoutube.com.example.org/')).toBe(false);
+		expect(isPageSite(undefined)).toBe(false);
+	});
+});

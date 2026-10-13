@@ -264,7 +264,10 @@ const renderProbe = (state: State, tab: chrome.tabs.Tab, found: boolean) => {
 const render = (state: State, tab: chrome.tabs.Tab) => {
 	const tabId = tab.id!;
 	// A page item belongs to one address; on sites that navigate without reloading, older ones no longer apply.
-	const all = Object.values(state.media[tabId] ?? {}).filter(item => item.kind !== 'page' || item.url === tab.url);
+	const current = Object.values(state.media[tabId] ?? {}).filter(item => item.kind !== 'page' || item.url === tab.url);
+	// Where yt-dlp has answered for a site it knows, its result stands in for the plain files found there.
+	const answered = isPageSite(tab.url) && current.some(item => item.kind === 'page');
+	const all = answered ? current.filter(item => item.kind !== 'file') : current;
 	const { shown: media, hidden } = arrange(all, prefs);
 	const jobs = Object.values(state.jobs).sort((a, b) => b.startedAt - a.startedAt);
 

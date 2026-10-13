@@ -2,7 +2,7 @@ import { classify, extensionOf, type Classification } from '../core/classify';
 import { summarizeHls } from '../core/m3u8';
 import { summarizeDash } from '../core/mpd';
 import { hashString } from '../core/naming';
-import { isPageSite } from '../core/sites';
+import { isFragmentSite } from '../core/sites';
 import type { DetectedMedia } from '../core/types';
 import { fetchWithHeaders, pickReplayHeaders } from './headers';
 import { mutate } from './state';
@@ -158,7 +158,7 @@ export const onResponseStarted = async (details: chrome.webRequest.OnResponseSta
 		return;
 	}
 
-	if (found.viaScript && isPageSite(details.initiator)) {
+	if (found.viaScript && isFragmentSite(details.initiator)) {
 		return;
 	}
 

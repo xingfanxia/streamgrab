@@ -1,13 +1,21 @@
-/**
- * Sites whose media sits behind signed or site-specific APIs. Their pages are handed to yt-dlp, and the media
- * chunks their players fetch are not listed, since each is only a fragment of a stream.
- */
-export const PAGE_SITES = /(^|\.)(youtube\.com|youtu\.be|bilibili\.com|b23\.tv|twitch\.tv|tiktok\.com|douyin\.com|vimeo\.com|dailymotion\.com|nicovideo\.jp|soundcloud\.com|xiaohongshu\.com|xhslink\.com|weibo\.com|instagram\.com)$/;
-
-export const isPageSite = (url: string | undefined): boolean => {
+const hostMatches = (pattern: RegExp) => (url: string | undefined): boolean => {
 	try {
-		return PAGE_SITES.test(new URL(url ?? '').hostname);
+		return pattern.test(new URL(url ?? '').hostname);
 	} catch {
 		return false;
 	}
 };
+
+/**
+ * Sites whose players fetch media only as fragments of a stream with no standard manifest. Nothing useful can be
+ * picked off the network there, so script-fetched media is not listed at all and the page is left to yt-dlp.
+ */
+export const isFragmentSite = hostMatches(/(^|\.)(youtube\.com|youtu\.be|bilibili\.com|b23\.tv|twitch\.tv|tiktok\.com|douyin\.com|vimeo\.com|dailymotion\.com|nicovideo\.jp|soundcloud\.com)$/);
+
+/**
+ * Sites yt-dlp is asked about as soon as the popup opens. On the ones beyond the fragment sites, network detection
+ * also works to a degree, and its results are shown only when yt-dlp has nothing.
+ */
+export const isPageSite = (url: string | undefined): boolean => (
+	isFragmentSite(url) || hostMatches(/(^|\.)(xiaohongshu\.com|xhslink\.com|weibo\.com|instagram\.com)$/)(url)
+);
