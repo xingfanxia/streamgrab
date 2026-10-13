@@ -428,6 +428,24 @@ try {
 		await page.close();
 	}
 
+	// A subtitle track saved as a transcript: plain text, the cue repeated across segments kept once, and copyable.
+	{
+		writeFileSync(join(fixtures, 'spoken.html'), `<!doctype html><title>Spoken</title><script>fetch('/hls-subs/master.m3u8')</script>`);
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/spoken.html`);
+		const popup = await openPopup(page);
+		await popup.getByTestId('more').click({ timeout: 20_000 });
+		await popup.getByTestId('transcript').filter({ hasText: 'English' }).click();
+		await popup.locator('[data-testid="finished-list"] [data-testid="job"]').first().waitFor({ timeout: 30_000 });
+		const name = await popup.locator('[data-testid="finished-list"] .title').first().textContent();
+		const saved = readFileSync(newestDownload()!, 'utf8');
+		check(name === 'Spoken.English.txt' && saved === 'first line spans the boundary last line\n', `transcript: saved as ${name} with the text "${saved.trim()}"`);
+		check(await popup.getByTestId('copy-text').count() === 1, 'transcript: offered for copying from the list');
+		await popup.getByTestId('clear').first().click();
+		await popup.close();
+		await page.close();
+	}
+
 	// A page handed to yt-dlp through the native bridge: found on request, downloaded by yt-dlp itself.
 	{
 		writeFileSync(join(fixtures, 'bridge.html'), '<!doctype html><title>Bridge fixture</title><video src="/direct.mp4" controls></video>');

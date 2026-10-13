@@ -79,13 +79,17 @@ const sizeLabel = (media: DetectedMedia, variant?: Variant) => {
 
 const fileNameOf = (url: string) => decodeURIComponent(new URL(url).pathname.split('/').pop() || url);
 
-const start = (media: DetectedMedia, options: { variantId?: string | null; audioOnly?: boolean; subtitleUrl?: string }) => send({
+const start = (
+	media: DetectedMedia,
+	options: { variantId?: string | null; audioOnly?: boolean; subtitleUrl?: string; transcript?: boolean },
+) => send({
 	type: 'download',
 	tabId: media.tabId,
 	key: media.key,
 	variantId: options.variantId ?? media.variants[0]?.id ?? null,
 	audioOnly: options.audioOnly ?? false,
 	subtitleUrl: options.subtitleUrl,
+	transcript: options.transcript,
 });
 
 /** One other way to save an item: a quality, the audio alone, or a subtitle track. */
@@ -111,6 +115,10 @@ const renderOptions = (media: DetectedMedia) => {
 	}
 	for (const track of media.subtitles ?? []) {
 		rows.push(optionRow(t('subtitlesIn', track.label), media.kind === 'page' ? 'SRT' : 'VTT', 'subtitle', () => start(media, { subtitleUrl: track.url })));
+	}
+	// The same tracks as plain reading text: no timings, repeats removed, paragraphs at the pauses.
+	for (const track of media.subtitles ?? []) {
+		rows.push(optionRow(t('transcriptIn', track.label), 'TXT', 'transcript', () => start(media, { subtitleUrl: track.url, transcript: true })));
 	}
 	return rows;
 };
@@ -250,6 +258,14 @@ const renderFinished = (job: Job) => {
 			reason.append(copy);
 		}
 		item.append(reason);
+	}
+	if (job.state === 'done' && job.text) {
+		const copy = el('button', { className: 'quiet', textContent: t('copyText'), testid: 'copy-text' });
+		copy.addEventListener('click', async () => {
+			await navigator.clipboard.writeText(job.text!);
+			copy.textContent = t('copied');
+		});
+		item.append(copy);
 	}
 	if (job.state === 'done' && (job.downloadId !== undefined || job.path)) {
 		item.append(el('button', { className: 'quiet', textContent: t('showFile'), testid: 'show', onclick: () => send({ type: 'reveal', jobId: job.id }) }));

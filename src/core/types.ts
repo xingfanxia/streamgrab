@@ -73,6 +73,8 @@ export type Job = {
 	downloadId?: number;
 	/** Where yt-dlp saved the file, for jobs it carried out. */
 	path?: string;
+	/** The text of a finished transcript, kept so it can be copied without opening the file. */
+	text?: string;
 	startedAt: number;
 };
 
@@ -84,6 +86,8 @@ export type JobRequest = {
 	/** Chosen variant, or null for the best available. */
 	variant: Variant | null;
 	audioOnly: boolean;
+	/** For a `subtitles` job: save readable text instead of the timed subtitle file. */
+	transcript?: boolean;
 	/** A second file holding the sound, for a `file` whose picture and sound are served separately. */
 	audioUrl?: string;
 	live: boolean;

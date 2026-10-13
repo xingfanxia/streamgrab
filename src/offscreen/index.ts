@@ -1,6 +1,7 @@
 import { StreamTarget } from 'mediabunny';
 import { listSegmentUris } from '../core/m3u8';
 import { summarizeDash } from '../core/mpd';
+import { toTranscript } from '../core/transcript';
 import { mergeVtt } from '../core/vtt';
 import type { JobRequest } from '../core/types';
 import { fetchOk, withRetry } from '../engine/fetching';
@@ -145,7 +146,7 @@ const execute = async (
 	hooks: EngineHooks,
 	file: FileSystemFileHandle,
 	noteBytes: (end: number) => void,
-) => {
+): Promise<string | undefined> => {
 	// A plain file keeps what an earlier, interrupted round already fetched and carries on from there.
 	const plain = request.kind === 'file' && !request.audioUrl;
 	const kept = plain ? (await file.getFile()).size : 0;
@@ -180,11 +181,16 @@ const execute = async (
 				segments.push(await withRetry(async () => (await fetchOk(hooks.fetchFn, url, { signal: hooks.stopSignal })).text()));
 				hooks.onProgress(segments.length / uris.length);
 			}
-			const bytes = new TextEncoder().encode(mergeVtt(segments));
+			const subtitles = mergeVtt(segments);
+			const content = request.transcript ? toTranscript(subtitles) : subtitles;
+			if (!content) {
+				throw new Error('These subtitles contain no text');
+			}
+			const bytes = new TextEncoder().encode(content);
 			await writable.write(bytes);
 			noteBytes(bytes.byteLength);
 			await writable.close();
-			return;
+			return request.transcript ? content : undefined;
 		}
 
 		const target = new StreamTarget(new WritableStream({
@@ -232,6 +238,8 @@ const run = async (request: JobRequest) => {
 	running.set(request.jobId, job);
 
 	const notes: RequestNote[] = [];
+	/** A transcript's text, sent along so it can be copied from the list. */
+	let text: string | undefined;
 	let bytes = 0;
 	let progress: number | null = null;
 	let lastSent = 0;
@@ -270,7 +278,7 @@ const run = async (request: JobRequest) => {
 				},
 			};
 			try {
-				await execute(request, hooks, file, end => {
+				text = await execute(request, hooks, file, end => {
 					bytes = Math.max(bytes, end);
 					report();
 				});
@@ -300,7 +308,7 @@ const run = async (request: JobRequest) => {
 		endTurn();
 		endTurn = () => {};
 		job.blobUrl = URL.createObjectURL(await file.getFile());
-		await send({ from: 'engine', type: 'done', jobId: request.jobId, blobUrl: job.blobUrl, bytes });
+		await send({ from: 'engine', type: 'done', jobId: request.jobId, blobUrl: job.blobUrl, bytes, text: text && text.length <= 300_000 ? text : undefined });
 	} catch (error) {
 		endTurn();
 		await root.removeEntry(request.opfsName).catch(() => {});

@@ -1,5 +1,6 @@
-import { hashString } from '../core/naming';
+import { hashString, sanitizeBasename } from '../core/naming';
 import { pageUrlForYtDlp } from '../core/sites';
+import { toTranscript } from '../core/transcript';
 import type { DetectedMedia, Variant } from '../core/types';
 import type { Probe, UiCommand } from '../shared/messages';
 import { loadState, mutate } from './state';
@@ -26,6 +27,7 @@ type HostMessage =
 	| HostInfo
 	| { type: 'progress'; bytes: number; fraction: number | null }
 	| { type: 'done'; files: string[]; bytes: number }
+	| { type: 'text'; text: string }
 	| { type: 'error'; message: string };
 
 const ports = new Map<string, chrome.runtime.Port>();
@@ -148,6 +150,10 @@ export const startPageDownload = async (media: DetectedMedia, command: Extract<U
 	});
 
 	const [mode, language] = subtitle?.url.split(':') ?? [];
+	if (subtitle && command.transcript) {
+		await savePageTranscript(jobId, media, title, subtitle.label, { language: language!, automatic: mode === 'auto' });
+		return;
+	}
 	const reply = await call({
 		op: 'download',
 		url: pageUrlForYtDlp(media.url),
@@ -180,6 +186,63 @@ export const startPageDownload = async (media: DetectedMedia, command: Extract<U
 		} else {
 			job.state = 'failed';
 			job.error = reply.type === 'error' ? reply.message : 'the yt-dlp bridge is not installed';
+		}
+	});
+};
+
+/**
+ * Gets a subtitle track as text from yt-dlp, turns it into a transcript here, where the one implementation of that
+ * lives, and hands the result back to the host to write into the downloads folder.
+ */
+const savePageTranscript = async (
+	jobId: string,
+	media: DetectedMedia,
+	title: string,
+	label: string,
+	subtitle: { language: string; automatic: boolean },
+) => {
+	const fail = (error: string) => mutate(state => {
+		const job = state.jobs[jobId];
+		if (job) {
+			job.state = 'failed';
+			job.error = error;
+		}
+	});
+
+	const fetched = await call({
+		op: 'download',
+		url: pageUrlForYtDlp(media.url),
+		subtitle,
+		asText: true,
+		cookies: await cookiesFor(media.url),
+	}, () => {}, port => ports.set(jobId, port));
+	ports.delete(jobId);
+	if (fetched.type !== 'text') {
+		await fail(fetched.type === 'error' ? fetched.message : 'the yt-dlp bridge is not installed');
+		return;
+	}
+
+	const text = toTranscript(fetched.text);
+	if (!text) {
+		await fail('These subtitles contain no text');
+		return;
+	}
+	const written = await call({ op: 'write', name: `${sanitizeBasename(title)}.${sanitizeBasename(label)}.txt`, text }, () => {});
+	await mutate(state => {
+		const job = state.jobs[jobId];
+		if (!job || job.state !== 'running') {
+			return;
+		}
+		if (written.type === 'done') {
+			job.state = 'done';
+			job.progress = 1;
+			job.path = written.files[0]!;
+			job.filename = job.path.split('/').pop()!;
+			job.bytes = written.bytes;
+			job.text = text.length <= 300_000 ? text : undefined;
+		} else {
+			job.state = 'failed';
+			job.error = written.type === 'error' ? written.message : 'the transcript could not be saved';
 		}
 	});
 };

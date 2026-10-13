@@ -126,7 +126,8 @@ export const startDownload = async (command: Extract<UiCommand, { type: 'downloa
 	const title = sanitizeBasename(media.title || cleanTitle(tab?.title || media.pageTitle || '') || new URL(media.url).hostname);
 	const audioOnly = command.audioOnly || !media.hasVideo;
 	const subtitle = media.subtitles?.find(track => track.url === command.subtitleUrl);
-	const ext = subtitle ? 'vtt' : extensionFor(media, audioOnly);
+	const asTranscript = Boolean(subtitle && command.transcript);
+	const ext = subtitle ? (asTranscript ? 'txt' : 'vtt') : extensionFor(media, audioOnly);
 	const basename = subtitle ? `${title}.${sanitizeBasename(subtitle.label)}` : title;
 	const jobId = crypto.randomUUID();
 
@@ -154,6 +155,7 @@ export const startDownload = async (command: Extract<UiCommand, { type: 'downloa
 		url: subtitle?.url ?? variant?.url ?? media.url,
 		variant,
 		audioOnly,
+		transcript: asTranscript,
 		audioUrl: subtitle ? undefined : media.audioUrl,
 		live: media.live ?? false,
 		opfsName: `${jobId}.${ext}`,
@@ -239,7 +241,7 @@ export const onEngineEvent = async (event: EngineEvent) => {
 			await sendToEngine({ to: 'engine', type: 'release', jobId: event.jobId });
 			return;
 		}
-		await finish(event.jobId, { state: 'saving', bytes: event.bytes, progress: 1 });
+		await finish(event.jobId, { state: 'saving', bytes: event.bytes, progress: 1, text: event.text });
 		const downloadId = await chrome.downloads.download({
 			url: event.blobUrl,
 			filename: job.filename,

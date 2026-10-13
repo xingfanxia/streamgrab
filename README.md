@@ -11,6 +11,9 @@ It handles:
   AES-128 with a published key are supported. Live streams are recorded until you stop them.
 - **DASH** (`.mpd`): the chosen video representation and the best audio one are merged.
 - **HLS subtitles**, saved as a `.vtt` file next to the video.
+- **Transcripts**: any subtitle track, including YouTube's automatic captions through yt-dlp, saved as plain
+  reading text (`.txt`) with timings and repeated lines removed, and copyable straight from the list. Videos
+  without subtitles have no transcript; nothing is transcribed from the sound.
 - **YouTube, Bilibili and the other sites [yt-dlp](https://github.com/yt-dlp/yt-dlp) knows**, by handing the page
   to the copy of yt-dlp installed on your machine. See [the yt-dlp bridge](#the-yt-dlp-bridge).
 

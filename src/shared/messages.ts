@@ -26,8 +26,11 @@ export const emptyState = (): State => ({ media: {}, jobs: {}, probes: {}, onScr
 
 /** Sent by the popup to the service worker. */
 export type UiCommand =
-	/** `subtitleUrl` asks for one of the media's subtitle tracks instead of the media itself. */
-	| { type: 'download'; tabId: number; key: string; variantId: string | null; audioOnly: boolean; subtitleUrl?: string }
+	/**
+	 * `subtitleUrl` asks for one of the media's subtitle tracks instead of the media itself, and `transcript` for
+	 * that track as readable text rather than a timed subtitle file.
+	 */
+	| { type: 'download'; tabId: number; key: string; variantId: string | null; audioOnly: boolean; subtitleUrl?: string; transcript?: boolean }
 	/** Ends a running job; `keep` saves what was received so far instead of discarding it. */
 	| { type: 'stop'; jobId: string; keep: boolean }
 	| { type: 'dismiss'; jobId: string }
@@ -68,7 +71,7 @@ export type EngineEvent =
 	/** The job has gone back to waiting for a turn and will start over. */
 	| { from: 'engine'; type: 'waiting'; jobId: string }
 	| { from: 'engine'; type: 'progress'; jobId: string; progress: number | null; bytes: number }
-	| { from: 'engine'; type: 'done'; jobId: string; blobUrl: string; bytes: number }
+	| { from: 'engine'; type: 'done'; jobId: string; blobUrl: string; bytes: number; text?: string }
 	| { from: 'engine'; type: 'canceled'; jobId: string }
 	| { from: 'engine'; type: 'failed'; jobId: string; error: string; details: string };
 

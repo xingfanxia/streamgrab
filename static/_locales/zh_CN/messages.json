@@ -167,5 +167,16 @@
 	},
 	"copied": {
 		"message": "已复制"
+	},
+	"transcriptIn": {
+		"message": "文字稿，$LANG$",
+		"placeholders": {
+			"lang": {
+				"content": "$1"
+			}
+		}
+	},
+	"copyText": {
+		"message": "复制"
 	}
 }

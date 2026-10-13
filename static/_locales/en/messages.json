@@ -167,5 +167,16 @@
 	},
 	"copied": {
 		"message": "Copied"
+	},
+	"transcriptIn": {
+		"message": "Transcript, $LANG$",
+		"placeholders": {
+			"lang": {
+				"content": "$1"
+			}
+		}
+	},
+	"copyText": {
+		"message": "Copy"
 	}
 }

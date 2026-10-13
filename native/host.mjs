@@ -4,9 +4,9 @@
 //
 // Chrome frames each message as a 4-byte little-endian length followed by UTF-8 JSON, in both directions.
 import { spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join, resolve, sep } from 'node:path';
+import { basename, dirname, extname, join, resolve, sep } from 'node:path';
 
 const YT_DLP = process.env.STREAMGRAB_YT_DLP || 'yt-dlp';
 const FFMPEG = process.env.STREAMGRAB_FFMPEG || '';
@@ -148,7 +148,52 @@ const probe = async request => {
 	});
 };
 
+/** Fetches one subtitle track and returns its text, leaving nothing on disk. */
+const subtitleText = async request => {
+	const cookieArgs = commonArgs(request);
+	scratch ??= mkdtempSync(join(tmpdir(), 'streamgrab-'));
+	const { code, stderr } = await run([
+		...cookieArgs,
+		'--skip-download',
+		request.subtitle.automatic ? '--write-auto-subs' : '--write-subs',
+		'--sub-langs', request.subtitle.language,
+		'--convert-subs', 'srt',
+		'-P', scratch,
+		'-o', 'subtitles.%(ext)s',
+		'--', request.url,
+	], () => {});
+	const file = readdirSync(scratch).find(name => name.endsWith('.srt'));
+	if (code !== 0) {
+		finish({ type: 'error', message: lastErrorLine(stderr) });
+	} else if (!file) {
+		finish({ type: 'error', message: 'No subtitles in that language' });
+	} else {
+		finish({ type: 'text', text: readFileSync(join(scratch, file), 'utf8') });
+	}
+};
+
+/** Writes a text file into the output directory under a name that is taken, or the next free one after it. */
+const writeText = request => {
+	const name = basename(String(request.name ?? ''));
+	if (!name || name.startsWith('.') || extname(name) !== '.txt' || typeof request.text !== 'string') {
+		finish({ type: 'error', message: 'Only a named .txt file can be written' });
+		return;
+	}
+	const stem = name.slice(0, -4);
+	let path = join(OUTPUT_DIR, name);
+	for (let copy = 1; existsSync(path); copy++) {
+		path = join(OUTPUT_DIR, `${stem} (${copy}).txt`);
+	}
+	writeFileSync(path, request.text);
+	finish({ type: 'done', files: [path], bytes: statSync(path).size });
+};
+
 const download = async request => {
+	if (request.subtitle && request.asText) {
+		await subtitleText(request);
+		return;
+	}
+
 	const args = [
 		...commonArgs(request),
 		'--newline',
@@ -227,6 +272,10 @@ const reveal = request => {
 const handle = request => {
 	if (request.op === 'reveal') {
 		reveal(request);
+		return;
+	}
+	if (request.op === 'write') {
+		writeText(request);
 		return;
 	}
 	let url;

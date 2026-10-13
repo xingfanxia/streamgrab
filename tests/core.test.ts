@@ -237,3 +237,39 @@ describe('bounds', () => {
 		expect(jobsToDrop(jobs, 3)).toEqual([]);
 	});
 });
+
+describe('toTranscript', () => {
+	it('strips timings and markup and joins a cue broken over lines', async () => {
+		const { toTranscript } = await import('../src/core/transcript');
+		const vtt = 'WEBVTT\nKind: captions\n\nNOTE not shown\n\n1\n00:00:01.000 --> 00:00:03.000 align:start\n<v Ada>Tom &amp; I <i>left</i>\nat nine.\n\n00:00:03.200 --> 00:00:05.000\n<c.yellow>It was</c> raining.\n';
+		expect(toTranscript(vtt)).toBe('Ada: Tom & I left at nine. It was raining.\n');
+	});
+
+	it('keeps lines once when captions scroll up a line at a time', async () => {
+		const { toTranscript } = await import('../src/core/transcript');
+		const srt = [
+			'1\n00:00:00,000 --> 00:00:02,000\nall right so here we are',
+			'2\n00:00:02,000 --> 00:00:02,010\nall right so here we are',
+			'3\n00:00:02,010 --> 00:00:04,000\nall right so here we are\nin front of the elephants',
+			'4\n00:00:04,000 --> 00:00:06,000\nin front of the elephants\nthe cool thing about these guys',
+		].join('\n\n');
+		expect(toTranscript(srt)).toBe('all right so here we are in front of the elephants the cool thing about these guys\n');
+	});
+
+	it('starts a paragraph after a pause and keeps a line that is genuinely said again later', async () => {
+		const { toTranscript } = await import('../src/core/transcript');
+		const cue = (start: number, text: string) => `00:00:${String(start).padStart(2, '0')}.000 --> 00:00:${String(start + 1).padStart(2, '0')}.000\n${text}`;
+		const vtt = `WEBVTT\n\n${[cue(0, 'Thank you.'), cue(1, 'First point.'), cue(2, 'Second.'), cue(3, 'Third.'), cue(4, 'Fourth.'), cue(5, 'Fifth.'), cue(10, 'Thank you.')].join('\n\n')}\n`;
+		expect(toTranscript(vtt)).toBe('Thank you. First point. Second. Third. Fourth. Fifth.\n\nThank you.\n');
+	});
+
+	it('does not put spaces into text written without them', async () => {
+		const { toTranscript } = await import('../src/core/transcript');
+		expect(toTranscript('WEBVTT\n\n00:01.000 --> 00:02.000\n大家好，\n\n00:02.000 --> 00:03.000\n欢迎回来。\n\n00:03.000 --> 00:04.000\nToday 我们聊 AI\n')).toBe('大家好，欢迎回来。Today 我们聊 AI\n');
+	});
+
+	it('gives nothing for a file with no cues', async () => {
+		const { toTranscript } = await import('../src/core/transcript');
+		expect(toTranscript('WEBVTT\n\n')).toBe('');
+	});
+});
