@@ -34,7 +34,9 @@ export type UiCommand =
 	/** Asks yt-dlp what it can get from the tab's page. */
 	| { type: 'probe'; tabId: number }
 	/** Asks for thumbnails and durations of the tab's media that do not have them yet. */
-	| { type: 'preview'; tabId: number };
+	| { type: 'preview'; tabId: number }
+	/** Looks through the page itself for media elements, in addition to what was seen on the network. */
+	| { type: 'scan'; tabId: number };
 
 /** Sent by the service worker to the offscreen engine. */
 export type EngineCommand =

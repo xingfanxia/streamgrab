@@ -1,7 +1,8 @@
-import { classify, type Classification } from '../core/classify';
+import { classify, extensionOf, type Classification } from '../core/classify';
 import { summarizeHls } from '../core/m3u8';
 import { summarizeDash } from '../core/mpd';
 import { hashString } from '../core/naming';
+import { isPageSite } from '../core/sites';
 import type { DetectedMedia } from '../core/types';
 import { fetchWithHeaders, pickReplayHeaders } from './headers';
 import { mutate } from './state';
@@ -26,7 +27,7 @@ const describe = async (
 	replayHeaders: Record<string, string>,
 ): Promise<Partial<DetectedMedia> & { key: string } | null> => {
 	if (found.kind === 'file') {
-		return { key: hashString(url), ext: found.ext, size: found.size, variants: [], hasVideo: !/^(mp3|m4a|aac|ogg|opus|wav|flac)$/.test(found.ext ?? '') };
+		return { key: hashString(url), ext: found.ext, size: found.size, viaScript: found.viaScript, variants: [], hasVideo: !/^(mp3|m4a|aac|ogg|opus|wav|flac)$/.test(found.ext ?? '') };
 	}
 
 	const text = await (await fetchWithHeaders(url, replayHeaders)).text();
@@ -65,13 +66,16 @@ const describe = async (
 	};
 };
 
-const manifestAddress = (media: DetectedMedia) => {
-	if (media.kind !== 'hls' && media.kind !== 'dash') {
+/** A media item's address without its query string, which players vary between requests for the same thing. */
+const addressOf = (media: DetectedMedia) => {
+	if (media.kind === 'page') {
 		return null;
 	}
 	const url = new URL(media.url);
-	return url.origin + url.pathname;
+	return `${media.kind} ${url.origin}${url.pathname}`;
 };
+
+const isManifest = (media: DetectedMedia) => media.kind === 'hls' || media.kind === 'dash';
 
 const register = async (media: DetectedMedia) => {
 	await mutate(state => {
@@ -91,11 +95,23 @@ const register = async (media: DetectedMedia) => {
 			}
 		}
 
-		// Players often request one stream's manifest more than once with different query strings, and servers may
-		// answer each with slightly different text. Same address apart from the query means same stream.
-		const address = manifestAddress(media);
-		if (address && Object.values(tab).some(item => manifestAddress(item) === address)) {
+		// Players often request one thing more than once with different query strings, and servers may answer each
+		// with slightly different text. Same address apart from the query means same media.
+		const address = addressOf(media);
+		if (address && Object.values(tab).some(item => addressOf(item) === address)) {
 			return;
+		}
+
+		// Once a tab has a manifest, the media files its player fetches are pieces of that stream.
+		if (media.viaScript && Object.values(tab).some(isManifest)) {
+			return;
+		}
+		if (isManifest(media)) {
+			for (const item of Object.values(tab)) {
+				if (item.viaScript) {
+					delete tab[item.key];
+				}
+			}
 		}
 
 		tab[media.key] = media;
@@ -142,6 +158,10 @@ export const onResponseStarted = async (details: chrome.webRequest.OnResponseSta
 		return;
 	}
 
+	if (found.viaScript && isPageSite(details.initiator)) {
+		return;
+	}
+
 	const replayHeaders = sentHeaders.get(details.requestId) ?? {};
 	try {
 		const described = await describe(found, details.url, replayHeaders);
@@ -164,6 +184,47 @@ export const onResponseStarted = async (details: chrome.webRequest.OnResponseSta
 		});
 	} catch (error) {
 		console.warn('streamgrab: could not inspect', details.url, error);
+	}
+};
+
+/**
+ * Lists the media elements already on the page. This covers what network detection misses: media that started
+ * before the extension was loaded, came from the browser cache, or has not been played yet.
+ */
+export const scanPage = async (tabId: number) => {
+	const results = await chrome.scripting.executeScript({
+		target: { tabId, allFrames: true },
+		func: () => [...document.querySelectorAll<HTMLMediaElement>('video, audio')].map(element => ({
+			url: element.currentSrc || element.src || element.querySelector('source')?.src || '',
+			video: element instanceof HTMLVideoElement,
+			duration: Number.isFinite(element.duration) ? element.duration : undefined,
+			page: location.href,
+		})),
+	}).catch(() => []);
+
+	const tab = await chrome.tabs.get(tabId).catch(() => null);
+	for (const element of results.flatMap(frame => frame.result ?? [])) {
+		if (!/^https?:/.test(element.url)) {
+			continue;
+		}
+		const ext = extensionOf(element.url);
+		if (ext === 'm3u8' || ext === 'mpd') {
+			continue;
+		}
+		await register({
+			key: hashString(element.url),
+			kind: 'file',
+			url: element.url,
+			tabId,
+			pageUrl: tab?.url,
+			pageTitle: tab?.title,
+			replayHeaders: { referer: element.page },
+			ext: ext ?? 'mp4',
+			duration: element.duration,
+			variants: [],
+			hasVideo: element.video,
+			detectedAt: Date.now(),
+		});
 	}
 };
 

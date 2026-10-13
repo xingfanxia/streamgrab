@@ -1,5 +1,6 @@
 import { arrange, DEFAULT_PREFS, estimateSize, type ListPrefs } from '../core/arrange';
 import { cleanTitle } from '../core/naming';
+import { isPageSite } from '../core/sites';
 import type { DetectedMedia, Job, Variant } from '../core/types';
 import { emptyState, STATE_KEY, type State, type UiCommand } from '../shared/messages';
 
@@ -20,9 +21,6 @@ const durationSelect = byId<HTMLSelectElement>('min-duration');
 
 const PREFS_KEY = 'listPrefs';
 let prefs: ListPrefs = DEFAULT_PREFS;
-
-/** Sites that yt-dlp handles and network detection cannot; their pages are checked as soon as the popup opens. */
-const PAGE_SITES = /(^|\.)(youtube\.com|youtu\.be|bilibili\.com|b23\.tv|twitch\.tv|tiktok\.com|douyin\.com|vimeo\.com|dailymotion\.com|nicovideo\.jp|soundcloud\.com)$/;
 
 /** Media whose list of other ways to save is open, kept across re-renders. */
 const expanded = new Set<string>();
@@ -352,12 +350,10 @@ const main = async () => {
 		}
 	});
 
-	try {
-		if (PAGE_SITES.test(new URL(tab.url ?? '').hostname)) {
-			void send({ type: 'probe', tabId });
-		}
-	} catch {
-		// No readable address, nothing to ask yt-dlp about.
+	void send({ type: 'scan', tabId });
+	// On sites yt-dlp is known to handle, the page is checked straight away.
+	if (isPageSite(tab.url)) {
+		void send({ type: 'probe', tabId });
 	}
 };
 

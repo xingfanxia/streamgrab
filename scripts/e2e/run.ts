@@ -211,6 +211,34 @@ try {
 		await page.close();
 	}
 
+	// Media that never shows up as a played file on the network: one fetched whole by a script, and one in a
+	// <video> element that has not loaded anything yet. A fragment fetched next to a manifest must stay unlisted.
+	{
+		writeFileSync(join(fixtures, 'quiet.html'), `<!doctype html><title>Quiet page</title>
+			<video src="/hls/v0_000.ts" preload="none"></video><video src="/source.mp4" preload="none"></video>
+			<script>fetch('/direct.mp4', { headers: { Range: 'bytes=0-999' } })</script>`);
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/quiet.html`);
+		const popup = await openPopup(page);
+		const items = popup.getByTestId('media-item');
+		await items.nth(2).waitFor({ timeout: 15_000 }).catch(() => {});
+		const titles = await popup.locator('.item .shot .tag').allTextContents();
+		check(await items.count() === 3, `quiet page: script-fetched file and unplayed elements listed (${titles.join(', ')})`);
+		await popup.close();
+		await page.close();
+
+		writeFileSync(join(fixtures, 'fragments.html'), `<!doctype html><title>Fragments</title>
+			<script>fetch('/hls/master.m3u8').then(() => fetch('/direct.mp4', { headers: { Range: 'bytes=0-999' } }))</script>`);
+		const second = await context.newPage();
+		await second.goto(`${server.origin}/fragments.html`);
+		const secondPopup = await openPopup(second);
+		await secondPopup.getByTestId('media-item').first().waitFor();
+		await secondPopup.waitForTimeout(1500);
+		check(await secondPopup.getByTestId('media-item').count() === 1, 'fragments page: a file fetched beside a manifest is not listed');
+		await secondPopup.close();
+		await second.close();
+	}
+
 	// A page handed to yt-dlp through the native bridge: found on request, downloaded by yt-dlp itself.
 	{
 		writeFileSync(join(fixtures, 'bridge.html'), '<!doctype html><title>Bridge fixture</title><video src="/direct.mp4" controls></video>');

@@ -25,6 +25,8 @@ export type DetectedMedia = {
 	/** Container extension for direct files, e.g. `mp4`. */
 	ext?: string;
 	size?: number;
+	/** A file a script fetched; dropped when a manifest turns up on the same tab, as it is then a stream fragment. */
+	viaScript?: boolean;
 	duration?: number;
 	live?: boolean;
 	/** Set when the manifest declares a DRM system; such media is listed but not downloadable. */

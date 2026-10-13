@@ -5,7 +5,8 @@ limits, no telemetry and talks to no server of its own.
 
 It handles:
 
-- **Direct files** the browser plays (`mp4`, `webm`, `mp3`, ...), saved as they are.
+- **Direct files** (`mp4`, `webm`, `mp3`, ...), saved as they are: ones the browser plays, ones a page's script
+  fetches, and ones sitting in a `<video>` or `<audio>` element that has not been played yet.
 - **HLS** (`.m3u8`): pick a quality, or take audio only. MPEG-TS and fMP4 segments, separate audio renditions and
   AES-128 with a published key are supported. Live streams are recorded until you stop them.
 - **DASH** (`.mpd`): the chosen video representation and the best audio one are merged.
@@ -43,8 +44,8 @@ This registers a small native messaging host (`native/host.mjs`) that only this 
 listed in the popup's code the page is checked when the popup opens; anywhere else, use **Look for media on this
 page with yt-dlp**. Downloads are saved by yt-dlp into your Downloads folder, and subtitles can be saved as `.srt`.
 
-The extension passes the site's cookies to yt-dlp so that logged-in content works, except on YouTube, where using
-account cookies with a downloader risks the account. `npm run install-host -- --uninstall` removes the bridge.
+The extension passes the site's cookies from the current browser profile to yt-dlp, so content that needs your
+login works. Be aware that some sites, YouTube among them, may restrict accounts they see used with a downloader. `npm run install-host -- --uninstall` removes the bridge.
 macOS and Linux only.
 
 ## What it does not do

@@ -8,9 +8,6 @@ import { loadState, mutate } from './state';
 
 const HOST = 'io.github.xingfanxia.streamgrab';
 
-/** Sites where logging in changes what is available, but where sending account cookies to a downloader is unwise. */
-const NO_COOKIE_HOSTS = /(^|\.)(youtube\.com|youtu\.be|googlevideo\.com)$/;
-
 type HostInfo = {
 	type: 'info';
 	id: string;
@@ -31,12 +28,8 @@ type HostMessage =
 
 const ports = new Map<string, chrome.runtime.Port>();
 
-const cookiesFor = async (url: string) => {
-	if (NO_COOKIE_HOSTS.test(new URL(url).hostname)) {
-		return [];
-	}
-	return chrome.cookies.getAll({ url });
-};
+/** The browser's cookies for the page, so yt-dlp sees the same login the user has in this profile. */
+const cookiesFor = (url: string) => chrome.cookies.getAll({ url });
 
 /**
  * Sends one request to the host and reports its messages. Resolves with the final message, or with `missing` when

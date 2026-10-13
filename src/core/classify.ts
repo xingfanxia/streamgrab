@@ -13,6 +13,8 @@ export type Classification = {
 	kind: MediaKind;
 	ext?: string;
 	size?: number;
+	/** True when a script fetched the file rather than the browser playing it, so it may be one piece of a stream. */
+	viaScript?: boolean;
 };
 
 const SEGMENT_EXTENSIONS = new Set(['ts', 'm4s', 'm2ts', 'm4f', 'cmfv', 'cmfa', 'cmft']);
@@ -52,8 +54,8 @@ const totalSize = (headers: Record<string, string>): number | undefined => {
 
 /**
  * Decides whether a network response is something worth offering for download. Manifests are recognised wherever they
- * appear; plain files only count when the browser loaded them as media or a document, because media files fetched by
- * script are almost always chunks of a stream whose manifest is detected separately.
+ * appear. Plain files count when the browser plays them, and also when a script fetches them, since many players
+ * load a whole file that way; script-fetched files must state a size, and the caller weeds out stream fragments.
  */
 export const classify = (response: ResponseInfo): Classification | null => {
 	if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -73,10 +75,6 @@ export const classify = (response: ResponseInfo): Classification | null => {
 	if ((ext && SEGMENT_EXTENSIONS.has(ext)) || contentType === 'video/mp2t' || contentType === 'video/iso.segment') {
 		return null;
 	}
-	if (response.type === 'xmlhttprequest') {
-		return null;
-	}
-
 	const typeExt = TYPE_EXTENSIONS[contentType];
 	const isMediaType = contentType.startsWith('video/') || contentType.startsWith('audio/');
 	const isMediaExt = ext !== undefined && FILE_EXTENSIONS.has(ext);
@@ -85,9 +83,10 @@ export const classify = (response: ResponseInfo): Classification | null => {
 	}
 
 	const size = totalSize(response.headers);
-	if (size !== undefined && size < MIN_FILE_SIZE) {
+	const viaScript = response.type === 'xmlhttprequest';
+	if (size === undefined ? viaScript : size < MIN_FILE_SIZE) {
 		return null;
 	}
 
-	return { kind: 'file', ext: isMediaExt ? ext : typeExt ?? 'mp4', size };
+	return { kind: 'file', ext: isMediaExt ? ext : typeExt ?? 'mp4', size, ...(viaScript ? { viaScript } : {}) };
 };

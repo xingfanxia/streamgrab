@@ -1,5 +1,5 @@
 import { isEngineEvent, type UiCommand } from '../shared/messages';
-import { forgetTab, onRequestFinished, onResponseStarted, onSendHeaders, updateBadge } from './detect';
+import { forgetTab, onRequestFinished, onResponseStarted, onSendHeaders, scanPage, updateBadge } from './detect';
 import { removeAllHeaderRules } from './headers';
 import { clearFinished, dismissJob, revealJob, onBrowserDownloadChanged, onEngineEvent, reconcileJobs, startDownload, stopDownload } from './jobs';
 import { previewTab } from './previews';
@@ -44,6 +44,8 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, respond) => {
 		void clearFinished();
 	} else if (command?.type === 'probe') {
 		void probePage(command.tabId);
+	} else if (command?.type === 'scan') {
+		void scanPage(command.tabId);
 	} else if (command?.type === 'preview') {
 		void previewTab(command.tabId);
 	} else if (command?.type === 'forget') {

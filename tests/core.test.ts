@@ -17,16 +17,21 @@ describe('classify', () => {
 		expect(classify(response('https://a/v/stream.mpd', 'other'))).toEqual({ kind: 'dash' });
 	});
 
-	it('ignores stream segments and script-fetched media chunks', () => {
+	it('ignores stream segments', () => {
 		expect(classify(response('https://a/seg1.ts', 'xmlhttprequest', { 'content-type': 'video/mp2t' }))).toBeNull();
 		expect(classify(response('https://a/chunk.m4s', 'media', { 'content-type': 'video/mp4' }))).toBeNull();
-		expect(classify(response('https://a/range.mp4', 'xmlhttprequest', { 'content-type': 'video/mp4', 'content-length': '9000000' }))).toBeNull();
 	});
 
 	it('lists files the browser plays directly, using the full size of ranged responses', () => {
 		const ranged = { 'content-type': 'video/mp4', 'content-range': 'bytes 0-999/52428800', 'content-length': '1000' };
 		expect(classify(response('https://a/movie.mp4', 'media', ranged, 206))).toEqual({ kind: 'file', ext: 'mp4', size: 52428800 });
 		expect(classify(response('https://a/clip', 'media', { 'content-type': 'video/webm' }))).toEqual({ kind: 'file', ext: 'webm', size: undefined });
+	});
+
+	it('lists files fetched by script when they state a size, marking them as possibly part of a stream', () => {
+		const sized = { 'content-type': 'video/mp4', 'content-range': 'bytes 0-99999/9000000' };
+		expect(classify(response('https://a/v.mp4?sign=1', 'xmlhttprequest', sized, 206))).toEqual({ kind: 'file', ext: 'mp4', size: 9000000, viaScript: true });
+		expect(classify(response('https://a/v.mp4', 'xmlhttprequest', { 'content-type': 'video/mp4' }))).toBeNull();
 	});
 
 	it('drops tiny files and failed responses', () => {
