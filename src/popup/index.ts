@@ -251,7 +251,7 @@ const renderFinished = (job: Job) => {
 		}
 		item.append(reason);
 	}
-	if (job.state === 'done' && job.downloadId !== undefined) {
+	if (job.state === 'done' && (job.downloadId !== undefined || job.path)) {
 		item.append(el('button', { className: 'quiet', textContent: t('showFile'), testid: 'show', onclick: () => send({ type: 'reveal', jobId: job.id }) }));
 	}
 	item.append(el('button', { className: 'quiet', textContent: t('clear'), testid: 'clear', onclick: () => send({ type: 'dismiss', jobId: job.id }) }));

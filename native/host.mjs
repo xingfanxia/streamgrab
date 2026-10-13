@@ -6,7 +6,7 @@
 import { spawn } from 'node:child_process';
 import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 
 const YT_DLP = process.env.STREAMGRAB_YT_DLP || 'yt-dlp';
 const FFMPEG = process.env.STREAMGRAB_FFMPEG || '';
@@ -212,7 +212,23 @@ const download = async request => {
 	}
 };
 
+/** Shows a saved file in the file manager. Only paths inside the output directory are accepted. */
+const reveal = request => {
+	const path = resolve(String(request.path ?? ''));
+	if (!path.startsWith(resolve(OUTPUT_DIR) + sep)) {
+		finish({ type: 'error', message: 'That file is not in the downloads folder' });
+		return;
+	}
+	const [command, args] = process.platform === 'darwin' ? ['open', ['-R', path]] : ['xdg-open', [dirname(path)]];
+	spawn(command, args, { stdio: 'ignore', detached: true }).on('error', () => {}).unref();
+	finish({ type: 'done', files: [path], bytes: 0 });
+};
+
 const handle = request => {
+	if (request.op === 'reveal') {
+		reveal(request);
+		return;
+	}
 	let url;
 	try {
 		url = new URL(request.url);

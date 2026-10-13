@@ -36,6 +36,18 @@ npm run build
 Then open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and select the `dist` folder.
 Play a video, click the extension icon, and press Download. Files land in your normal downloads folder.
 
+## How downloads behave
+
+- **Plain files are fetched in pieces**, the way a player fetches them, and a piece that breaks is continued from
+  the last byte received. A file only counts as saved when every byte of its stated size has arrived.
+- **Up to five downloads run at once per server.** If a server keeps cutting a transfer off while others from it
+  are running, its limit is lowered a step, the cut transfer waits its turn, and the limit found is remembered
+  for a week. Waiting downloads can be cancelled.
+- **A failed download says why**, and offers the record of its requests to copy (status, range, bytes received
+  before each break) with query strings left out, since those carry signed tokens.
+- **Thumbnails and running times** are read when media is found on the tab in front, two items at a time.
+- The list keeps the newest 40 items per tab and the last 30 finished downloads.
+
 ## The yt-dlp bridge
 
 Some sites do not serve a file or a standard manifest that can be picked off the network; they need an extractor

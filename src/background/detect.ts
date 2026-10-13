@@ -1,3 +1,4 @@
+import { mediaToDrop } from '../core/bounds';
 import { classify, extensionOf, type Classification } from '../core/classify';
 import { summarizeHls } from '../core/m3u8';
 import { summarizeDash } from '../core/mpd';
@@ -116,6 +117,9 @@ const register = async (media: DetectedMedia) => {
 		}
 
 		tab[media.key] = media;
+		for (const key of mediaToDrop(Object.values(tab), media.key)) {
+			delete tab[key];
+		}
 	});
 	await updateBadge(media.tabId);
 

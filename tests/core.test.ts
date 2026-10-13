@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { arrange, estimateSize } from '../src/core/arrange';
+import { jobsToDrop, mediaToDrop } from '../src/core/bounds';
 import { createTurns } from '../src/engine/turns';
 import { classify } from '../src/core/classify';
 import { summarizeHls } from '../src/core/m3u8';
 import { cleanTitle, sanitizeBasename } from '../src/core/naming';
 import { findPartner } from '../src/core/pairing';
-import type { DetectedMedia } from '../src/core/types';
+import type { DetectedMedia, Job } from '../src/core/types';
 import { mergeVtt } from '../src/core/vtt';
 
 const response = (url: string, type: string, headers: Record<string, string> = {}, statusCode = 200) => (
@@ -217,5 +218,22 @@ describe('createTurns', () => {
 		await all;
 		expect(log.indexOf('three start')).toBeGreaterThan(log.indexOf('two end'));
 		expect(log.indexOf('four start')).toBeGreaterThan(log.indexOf('three end'));
+	});
+});
+
+describe('bounds', () => {
+	const media = (key: string, detectedAt: number) => ({ key, detectedAt }) as DetectedMedia;
+	const job = (id: string, state: Job['state'], startedAt: number) => ({ id, state, startedAt }) as Job;
+
+	it('drops the oldest media beyond the limit, never the one just added', () => {
+		const items = [media('new', 1), media('b', 2), media('c', 3), media('d', 4)];
+		expect(mediaToDrop(items, 'new', 3)).toEqual(['b']);
+		expect(mediaToDrop(items, 'new', 4)).toEqual([]);
+	});
+
+	it('drops the oldest finished jobs beyond the limit and leaves unfinished ones alone', () => {
+		const jobs = [job('old-running', 'running', 1), job('a', 'done', 2), job('b', 'failed', 3), job('c', 'canceled', 4), job('waiting', 'queued', 5)];
+		expect(jobsToDrop(jobs, 2)).toEqual(['a']);
+		expect(jobsToDrop(jobs, 3)).toEqual([]);
 	});
 });

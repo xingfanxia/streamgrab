@@ -1,9 +1,10 @@
+import { jobsToDrop } from '../core/bounds';
 import { cleanTitle, sanitizeBasename } from '../core/naming';
 import type { DetectedMedia, Job, JobRequest } from '../core/types';
 import type { EngineCommand, EngineEvent, UiCommand } from '../shared/messages';
 import { newRuleId, removeHeaderRule, setHeaderRule } from './headers';
 import { loadState, mutate } from './state';
-import { startPageDownload, stopPageDownload } from './ytdlp';
+import { revealPath, startPageDownload, stopPageDownload } from './ytdlp';
 
 /** Per running job: the header rule, the headers it replays and the hosts it covers so far. */
 type JobRule = { ruleId: number; headers: Record<string, string>; hosts: string[] };
@@ -92,6 +93,9 @@ const finish = async (jobId: string, patch: Partial<Job>) => {
 		if (job) {
 			Object.assign(job, patch);
 		}
+		for (const id of jobsToDrop(Object.values(state.jobs))) {
+			delete state.jobs[id];
+		}
 	});
 	await dropRule(jobId);
 };
@@ -167,9 +171,11 @@ export const dismissJob = (jobId: string) => mutate(state => {
 });
 
 export const revealJob = async (jobId: string) => {
-	const downloadId = (await loadState()).jobs[jobId]?.downloadId;
-	if (downloadId !== undefined) {
-		chrome.downloads.show(downloadId);
+	const job = (await loadState()).jobs[jobId];
+	if (job?.downloadId !== undefined) {
+		chrome.downloads.show(job.downloadId);
+	} else if (job?.path) {
+		await revealPath(job.path);
 	}
 };
 

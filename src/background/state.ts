@@ -10,7 +10,25 @@ export const loadState = (): Promise<State> => {
 
 const flush = async () => {
 	flushTimer = null;
-	await chrome.storage.session.set({ [STATE_KEY]: await loadState() });
+	const state = await loadState();
+	try {
+		await chrome.storage.session.set({ [STATE_KEY]: state });
+	} catch (error) {
+		// Almost certainly the storage quota. Thumbnails are the bulk of the state and can be read again, so they
+		// go first; losing them is far better than the popup silently showing stale state from then on.
+		console.warn('streamgrab: state did not fit, dropping thumbnails', error);
+		for (const tab of Object.values(state.media)) {
+			for (const media of Object.values(tab)) {
+				if (media.thumbnail?.startsWith('data:')) {
+					delete media.thumbnail;
+				}
+			}
+		}
+		for (const job of Object.values(state.jobs)) {
+			delete job.details;
+		}
+		await chrome.storage.session.set({ [STATE_KEY]: state }).catch(again => console.error('streamgrab: state could not be saved', again));
+	}
 };
 
 /** Applies a change to the shared state and schedules it to be persisted, which also notifies open UIs. */

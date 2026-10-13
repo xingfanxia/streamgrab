@@ -174,7 +174,8 @@ export const startPageDownload = async (media: DetectedMedia, command: Extract<U
 		if (reply.type === 'done') {
 			job.state = 'done';
 			job.progress = 1;
-			job.filename = reply.files.at(-1)!.split('/').pop()!;
+			job.path = reply.files.at(-1)!;
+			job.filename = job.path.split('/').pop()!;
 			job.bytes = reply.bytes || job.bytes;
 		} else {
 			job.state = 'failed';
@@ -182,6 +183,9 @@ export const startPageDownload = async (media: DetectedMedia, command: Extract<U
 		}
 	});
 };
+
+/** Shows a file yt-dlp saved in the system file manager. */
+export const revealPath = (path: string) => call({ op: 'reveal', path }, () => {});
 
 /** Cancels a yt-dlp download; returns false when the job is not one of these. */
 export const stopPageDownload = (jobId: string) => {

@@ -71,6 +71,8 @@ export type Job = {
 	details?: string;
 	/** Id of the browser download that holds the finished file, once it has been handed over. */
 	downloadId?: number;
+	/** Where yt-dlp saved the file, for jobs it carried out. */
+	path?: string;
 	startedAt: number;
 };
 
