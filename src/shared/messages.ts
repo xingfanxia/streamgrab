@@ -65,6 +65,8 @@ export type EngineEvent =
 	| { from: 'engine'; type: 'host'; jobId: string; host: string }
 	/** The job has reached the front of its server's queue and begun transferring. */
 	| { from: 'engine'; type: 'started'; jobId: string }
+	/** The job has gone back to waiting for a turn and will start over. */
+	| { from: 'engine'; type: 'waiting'; jobId: string }
 	| { from: 'engine'; type: 'progress'; jobId: string; progress: number | null; bytes: number }
 	| { from: 'engine'; type: 'done'; jobId: string; blobUrl: string; bytes: number }
 	| { from: 'engine'; type: 'canceled'; jobId: string }

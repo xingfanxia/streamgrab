@@ -204,6 +204,18 @@ export const onEngineEvent = async (event: EngineEvent) => {
 		return;
 	}
 
+	if (event.type === 'waiting') {
+		await mutate(state => {
+			const job = state.jobs[event.jobId];
+			if (job?.state === 'running') {
+				job.state = 'queued';
+				job.progress = 0;
+				job.bytes = 0;
+			}
+		});
+		return;
+	}
+
 	if (event.type === 'progress') {
 		await mutate(state => {
 			const job = state.jobs[event.jobId];

@@ -20,8 +20,16 @@ type Running = {
 
 const running = new Map<string, Running>();
 
-/** Jobs wait their turn per server. */
-const takeTurn = createTurns();
+/**
+ * Jobs wait their turn per server, two at a time. A server that turns out to cut connections when two run is
+ * lowered to one for the rest of the session.
+ */
+const turns = createTurns(2);
+
+/** Whether an error is the connection breaking or the server holding back, as opposed to a refusal. */
+const isConnectionTrouble = (error: unknown) => (
+	error instanceof TypeError || (error instanceof Error && /network|bytes and stopped|Failed to fetch/i.test(error.message))
+);
 
 const send = (event: EngineEvent) => chrome.runtime.sendMessage(event);
 
@@ -196,30 +204,50 @@ const run = async (request: JobRequest) => {
 	};
 
 	const root = await navigator.storage.getDirectory();
-	const endTurn = await takeTurn(new URL(request.url).host);
+	const host = new URL(request.url).host;
+	let endTurn = () => {};
 	try {
-		if (job.stop.signal.aborted) {
-			throw new DOMException('Canceled', 'AbortError');
+		let file: FileSystemFileHandle;
+		for (let round = 0; ; round++) {
+			endTurn = await turns.take(host, job.stop.signal);
+			await send({ from: 'engine', type: 'started', jobId: request.jobId });
+			file = await root.getFileHandle(request.opfsName, { create: true });
+			const hooks: EngineHooks = {
+				fetchFn: makeFetch(request.jobId, notes),
+				stopSignal: job.stop.signal,
+				onProgress: fraction => {
+					progress = fraction;
+					report();
+				},
+			};
+			try {
+				await execute(request, hooks, file, end => {
+					bytes = Math.max(bytes, end);
+					report();
+				});
+				break;
+			} catch (error) {
+				// A connection cut while another transfer from the same server was running most likely means the
+				// server allows fewer at once. The job goes back in line, alone this time, instead of failing.
+				const crowded = turns.active(host) > 1;
+				endTurn();
+				endTurn = () => {};
+				if (job.stop.signal.aborted || round > 0 || !crowded || !isConnectionTrouble(error)) {
+					throw error;
+				}
+				turns.setLimit(host, 1);
+				await root.removeEntry(request.opfsName).catch(() => {});
+				bytes = 0;
+				progress = 0;
+				await send({ from: 'engine', type: 'waiting', jobId: request.jobId });
+			}
 		}
-		await send({ from: 'engine', type: 'started', jobId: request.jobId });
-		const file = await root.getFileHandle(request.opfsName, { create: true });
-		const hooks: EngineHooks = {
-			fetchFn: makeFetch(request.jobId, notes),
-			stopSignal: job.stop.signal,
-			onProgress: fraction => {
-				progress = fraction;
-				report();
-			},
-		};
-		await execute(request, hooks, file, end => {
-			bytes = Math.max(bytes, end);
-			report();
-		});
 
 		if (!job.keep || bytes === 0) {
 			throw new DOMException('Canceled', 'AbortError');
 		}
 		endTurn();
+		endTurn = () => {};
 		job.blobUrl = URL.createObjectURL(await file.getFile());
 		await send({ from: 'engine', type: 'done', jobId: request.jobId, blobUrl: job.blobUrl, bytes });
 	} catch (error) {

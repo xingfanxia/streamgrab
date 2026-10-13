@@ -10,11 +10,29 @@ export type FixtureServer = {
 };
 
 /**
- * Serves a directory over HTTP with Range support. When `requireReferer` is set, requests under `/protected/` (an
- * alias of the root) are rejected unless they carry that Referer, to exercise header replay.
+ * Serves a directory over HTTP with Range support. Three aliases of the root behave like awkward media servers:
+ * `/protected/` rejects requests without the given Referer, `/slow/` sends about 300 KB a second, and `/capped/`
+ * sends 50 KB a second and allows one transfer at a time, cutting off any that starts while another is running.
  */
 export const serveFixtures = async (root: string, requireReferer?: string): Promise<FixtureServer> => {
 	const requests: FixtureServer['requests'] = [];
+	let cappedBusy = false;
+
+	/** Writes a file range to the response, at a limited rate when one is given. */
+	const send = (response: import('node:http').ServerResponse, file: string, start: number, end: number, bytesPerSecond: number) => {
+		if (!bytesPerSecond) {
+			createReadStream(file, { start, end }).pipe(response);
+			return;
+		}
+		const step = Math.ceil(bytesPerSecond / 10);
+		const stream = createReadStream(file, { start, end, highWaterMark: step });
+		stream.on('data', chunk => {
+			stream.pause();
+			response.write(chunk, () => setTimeout(() => stream.resume(), 100));
+		});
+		stream.on('end', () => response.end());
+		response.on('close', () => stream.destroy());
+	};
 	const server: Server = createServer((request, response) => {
 		let path = decodeURIComponent(new URL(request.url!, 'http://x').pathname);
 		requests.push({ path, referer: request.headers.referer });
@@ -25,6 +43,24 @@ export const serveFixtures = async (root: string, requireReferer?: string): Prom
 				return;
 			}
 			path = path.slice('/protected'.length);
+		}
+
+		let bytesPerSecond = 0;
+		if (path.startsWith('/slow/')) {
+			bytesPerSecond = 300_000;
+			path = path.slice('/slow'.length);
+		} else if (path.startsWith('/capped/')) {
+			bytesPerSecond = 50_000;
+			path = path.slice('/capped'.length);
+			if (cappedBusy) {
+				// Answered properly, then cut off shortly after it starts, as a connection cap does.
+				setTimeout(() => response.destroy(), 400);
+			} else {
+				cappedBusy = true;
+				response.on('close', () => {
+					cappedBusy = false;
+				});
+			}
 		}
 
 		const file = join(root, normalize(path));
@@ -60,10 +96,10 @@ export const serveFixtures = async (root: string, requireReferer?: string): Prom
 			const start = Number(range[1]);
 			const end = range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
 			response.writeHead(206, { ...headers, 'Content-Range': `bytes ${start}-${end}/${size}`, 'Content-Length': end - start + 1 });
-			createReadStream(file, { start, end }).pipe(response);
+			send(response, file, start, end, bytesPerSecond);
 		} else {
 			response.writeHead(200, { ...headers, 'Content-Length': size });
-			createReadStream(file).pipe(response);
+			send(response, file, 0, size - 1, bytesPerSecond);
 		}
 	});
 

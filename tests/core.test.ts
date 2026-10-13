@@ -167,18 +167,49 @@ describe('findPartner', () => {
 });
 
 describe('createTurns', () => {
-	it('runs holders of one key one at a time and in order, and different keys together', async () => {
-		const takeTurn = createTurns();
+	const scenario = (limit: number) => {
+		const turns = createTurns(limit);
 		const log: string[] = [];
-		const job = async (key: string, name: string, ms: number) => {
-			const end = await takeTurn(key);
+		const job = async (key: string, name: string, ms: number, signal?: AbortSignal) => {
+			let end: () => void;
+			try {
+				end = await turns.take(key, signal);
+			} catch {
+				log.push(`${name} gave up`);
+				return;
+			}
 			log.push(`${name} start`);
 			await new Promise(resolve => setTimeout(resolve, ms));
 			log.push(`${name} end`);
 			end();
 		};
-		await Promise.all([job('a.example', 'first', 30), job('a.example', 'second', 5), job('b.example', 'other', 10)]);
-		expect(log.indexOf('first end')).toBeLessThan(log.indexOf('second start'));
-		expect(log.indexOf('other start')).toBeLessThan(log.indexOf('first end'));
+		return { turns, log, job };
+	};
+
+	it('runs up to the limit per key at once and the rest in order, with keys independent', async () => {
+		const { log, job } = scenario(2);
+		await Promise.all([job('a', 'one', 30), job('a', 'two', 30), job('a', 'three', 5), job('b', 'other', 5)]);
+		expect(log.slice(0, 3)).toEqual(['one start', 'two start', 'other start']);
+		expect(log.indexOf('three start')).toBeGreaterThan(log.indexOf('one end'));
+	});
+
+	it('lets a waiting holder give up at once without holding up the line', async () => {
+		const { log, job } = scenario(1);
+		const cancel = new AbortController();
+		const all = Promise.all([job('a', 'one', 30), job('a', 'two', 5, cancel.signal), job('a', 'three', 5)]);
+		cancel.abort();
+		await new Promise(resolve => setTimeout(resolve, 0));
+		expect(log).toEqual(['one start', 'two gave up']);
+		await all;
+		expect(log).toEqual(['one start', 'two gave up', 'one end', 'three start', 'three end']);
+	});
+
+	it('applies a lowered limit to those still waiting', async () => {
+		const { turns, log, job } = scenario(2);
+		const all = Promise.all([job('a', 'one', 20), job('a', 'two', 40), job('a', 'three', 5), job('a', 'four', 5)]);
+		turns.setLimit('a', 1);
+		await all;
+		expect(log.indexOf('three start')).toBeGreaterThan(log.indexOf('two end'));
+		expect(log.indexOf('four start')).toBeGreaterThan(log.indexOf('three end'));
 	});
 });

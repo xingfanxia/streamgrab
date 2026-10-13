@@ -353,6 +353,56 @@ try {
 		await page.close();
 	}
 
+	// Three slow downloads from one server: two run, the third waits and can be cancelled at once.
+	{
+		writeFileSync(join(fixtures, 'three.html'), `<!doctype html><title>Three slow ones</title>
+			${['direct', 'picture', 'short'].map(name => `<video src="/slow/${name}.mp4" preload="none"></video>`).join('')}`);
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/three.html`);
+		const popup = await openPopup(page);
+		const buttons = popup.getByTestId('download');
+		await buttons.nth(2).waitFor({ timeout: 20_000 });
+		for (let index = 0; index < 3; index++) {
+			await buttons.nth(index).click();
+		}
+		const queued = popup.locator('[data-testid="job"][data-state="queued"]');
+		await popup.waitForFunction(() => document.querySelectorAll('[data-testid="job"][data-state="running"]').length === 2 && document.querySelectorAll('[data-testid="job"][data-state="queued"]').length === 1, null, { timeout: 15_000 }).catch(() => {});
+		check(await queued.count() === 1 && await popup.locator('[data-testid="job"][data-state="running"]').count() === 2, 'slow server: two transfers run and the third waits its turn');
+		await queued.getByTestId('stop').click();
+		const cancelled = await popup.locator('[data-testid="job"][data-state="canceled"]').waitFor({ timeout: 3000 }).then(() => true, () => false);
+		check(cancelled && await popup.locator('[data-testid="job"][data-state="running"]').count() === 2, 'slow server: the waiting one is cancelled at once, the others carry on');
+		await popup.waitForFunction(() => document.querySelectorAll('[data-testid="finished-list"] [data-state="done"]').length === 2, null, { timeout: 60_000 }).catch(() => {});
+		check(await popup.locator('[data-testid="finished-list"] [data-state="done"]').count() === 2, 'slow server: both running transfers finish');
+		await popup.getByTestId('clear-finished').click();
+		await popup.close();
+		await page.close();
+	}
+
+	// A server that cuts off a second simultaneous transfer: the cut one goes back in line and still completes.
+	{
+		writeFileSync(join(fixtures, 'capped.html'), `<!doctype html><title>One at a time</title>
+			<video src="/capped/direct.mp4" preload="none"></video><video src="/capped/picture.mp4" preload="none"></video>`);
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/capped.html`);
+		const popup = await openPopup(page);
+		const buttons = popup.getByTestId('download');
+		await buttons.nth(1).waitFor({ timeout: 20_000 });
+		await buttons.nth(0).click();
+		await popup.locator('[data-testid="job"][data-state="running"]').waitFor();
+		await popup.waitForTimeout(1500);
+		await buttons.nth(1).click();
+		await popup.waitForFunction(() => document.querySelectorAll('[data-testid="finished-list"] [data-testid="job"]').length === 2, null, { timeout: 150_000 }).catch(() => {});
+		const states = await popup.locator('[data-testid="finished-list"] [data-testid="job"]').evaluateAll(rows => rows.map(row => (row as HTMLElement).dataset.state).join());
+		const errors = await popup.getByTestId('job-error').allTextContents();
+		check(states === 'done,done', `one-at-a-time server: the cut transfer went back in line and both completed (${states}${errors.length ? `: ${errors.join(' | ')}` : ''})`);
+		const sizes = readdirSync(downloads).map(name => join(downloads, name)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs).slice(0, 2).map(file => statSync(file).size).sort().join();
+		const expected = ['direct.mp4', 'picture.mp4'].map(name => statSync(join(fixtures, name)).size).sort().join();
+		check(sizes === expected, `one-at-a-time server: both files are complete (${sizes})`);
+		await popup.getByTestId('clear-finished').click().catch(() => {});
+		await popup.close();
+		await page.close();
+	}
+
 	// A failed download says why in full and offers the record of its requests, with no query strings in it.
 	{
 		writeFileSync(join(fixtures, 'vanishing.html'), '<!doctype html><title>Vanishing</title><video src="/gone.mp4?token=secret123" preload="none"></video>');
