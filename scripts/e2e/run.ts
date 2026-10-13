@@ -49,6 +49,11 @@ for (const [index, test] of cases.entries()) {
 const profile = mkdtempSync(join(tmpdir(), 'streamgrab-e2e-'));
 const downloads = join(profile, 'downloads');
 mkdirSync(downloads);
+
+// The yt-dlp bridge is registered inside the throwaway profile and told to save into its own directory.
+const bridgeDownloads = join(profile, 'bridge-downloads');
+mkdirSync(bridgeDownloads);
+execFileSync(process.execPath, [join(root, 'scripts/install-host.mjs'), '--dir', join(profile, 'NativeMessagingHosts'), '--output-dir', bridgeDownloads]);
 mkdirSync(shots, { recursive: true });
 
 const server = await serveFixtures(fixtures, 'http://127.0.0.1');
@@ -85,7 +90,7 @@ try {
 		const tabId = await worker.evaluate(async url => (await chrome.tabs.query({ url }))[0]!.id!, page.url());
 		const popup = await context.newPage();
 		popup.on('pageerror', error => console.error('popup error:', error.message));
-		await popup.setViewportSize({ width: 372, height: 420 });
+		await popup.setViewportSize({ width: 420, height: 600 });
 		await popup.goto(`chrome-extension://${extensionId}/popup.html?tab=${tabId}`);
 		return popup;
 	};
@@ -100,18 +105,36 @@ try {
 		check(await item.count() === 1, `${test.name}: exactly one item listed`);
 		check(await item.first().getAttribute('data-kind') === test.kind, `${test.name}: detected as ${test.kind}`);
 
+		if (index === 0) {
+			await popup.getByTestId('thumbnail').waitFor({ timeout: 20_000 });
+			const shown = await popup.getByTestId('thumbnail').evaluate((image: HTMLImageElement) => image.decode().then(() => image.naturalWidth));
+			check(shown === 240, `${test.name}: thumbnail decoded from the file (${shown}px wide)`);
+			await page.evaluate(() => {
+				document.title = '(4) Renamed while open';
+			});
+			await popup.locator('.title', { hasText: /^Renamed while open$/ }).waitFor({ timeout: 5000 });
+			check(true, `${test.name}: title follows the tab and drops the unread counter`);
+		} else if (!test.subtitles) {
+			const appeared = await popup.getByTestId('thumbnail').waitFor({ timeout: 20_000 }).then(() => true, () => false);
+			check(appeared, `${test.name}: thumbnail shown`);
+		}
+
 		if (test.pick) {
-			const select = popup.getByTestId('quality');
-			const value = await select.locator('option', { hasText: `${test.pick}p` }).getAttribute('value');
-			await select.selectOption(value!);
+			await popup.getByTestId('more').click();
 		}
 		const before = server.requests.length;
 		if (test.subtitles) {
 			await page.waitForTimeout(500);
 			check(await item.count() === 1, `${test.name}: subtitle playlist not listed separately`);
-			await popup.getByTestId('subtitles').selectOption({ label: test.subtitles });
+			await popup.getByTestId('more').click();
+			await popup.getByTestId('subtitle').filter({ hasText: test.subtitles }).click();
+		} else if (test.pick) {
+			await popup.locator(`[data-testid="quality"][data-height="${test.pick}"]`).click();
+		} else if (test.audioOnly) {
+			await popup.getByTestId('more').click();
+			await popup.getByTestId('audio-only').click();
 		} else {
-			await popup.getByTestId(test.audioOnly ? 'audio-only' : 'download').click();
+			await popup.getByTestId('download').click();
 		}
 
 		const job = popup.getByTestId('job').first();
@@ -146,6 +169,70 @@ try {
 			await popup.screenshot({ path: join(shots, 'popup-dark.png') });
 		}
 		await popup.getByTestId('clear').first().click();
+		await popup.close();
+		await page.close();
+	}
+
+	// Several items on one page: the list offers sorting and a length filter, and downloads get their own section.
+	// The page loads the same HLS video through two different master playlists, which must end up as one item.
+	{
+		writeFileSync(join(fixtures, 'many.html'), `<!doctype html><title>(2) Several videos</title><video src="/direct.mp4" muted autoplay></video>
+			<script>fetch('/hls/master.m3u8'); fetch('/dash/manifest.mpd'); fetch('/hls-subs/master.m3u8')</script>`);
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/many.html`);
+		const popup = await openPopup(page);
+		const items = popup.getByTestId('media-item');
+		await popup.getByTestId('thumbnail').nth(2).waitFor({ timeout: 30_000 });
+		await popup.waitForTimeout(1500);
+		check(await items.count() === 3 && await popup.getByTestId('sort').isVisible(), `several items: ${await items.count()} listed, the twin playlists merged, sorting offered`);
+		check(await popup.getByTestId('subtitle').count() === 1, 'several items: the playlist with subtitles is the one kept');
+		const sizes = await popup.getByTestId('size').allTextContents();
+		check(sizes.filter(text => /^~?[\d.]+ (KB|MB)$/.test(text)).length >= 3, `several items: sizes shown (${sizes.join(' | ')})`);
+		check((await popup.getByTestId('duration').allTextContents()).join() === '0:12,0:12,0:12', 'several items: durations shown on the frames');
+
+		await popup.getByTestId('min-duration').selectOption('60');
+		await popup.getByTestId('hidden-note').waitFor();
+		check(await items.count() === 0, 'several items: the length filter hides the 12 second fixtures and says so');
+		await popup.getByTestId('min-duration').selectOption('0');
+
+		await items.first().getByTestId('download').click();
+		await popup.locator('[data-testid="finished-list"] [data-state="done"]').waitFor({ timeout: 60_000 });
+		await items.nth(1).getByTestId('more').click();
+		await items.nth(1).getByTestId('download').click();
+		check(await popup.locator('#tray [data-testid="finished-list"] [data-state="done"]').count() === 1, 'several items: finished downloads sit in the tray, apart from the page list');
+		await popup.setViewportSize({ width: 420, height: 600 });
+		await popup.screenshot({ path: join(shots, 'popup-many.png') });
+		await popup.emulateMedia({ colorScheme: 'dark' });
+		await popup.screenshot({ path: join(shots, 'popup-many-dark.png') });
+		await popup.locator('[data-testid="finished-list"] [data-state="done"]').nth(1).waitFor({ timeout: 60_000 });
+		await popup.getByTestId('clear-finished').click();
+		await popup.getByTestId('job').first().waitFor({ state: 'detached' });
+		await popup.close();
+		await page.close();
+	}
+
+	// A page handed to yt-dlp through the native bridge: found on request, downloaded by yt-dlp itself.
+	{
+		writeFileSync(join(fixtures, 'bridge.html'), '<!doctype html><title>Bridge fixture</title><video src="/direct.mp4" controls></video>');
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/bridge.html`);
+		const popup = await openPopup(page);
+		await popup.getByTestId('probe').click();
+		const item = popup.locator('[data-testid="media-item"][data-kind="page"]');
+		const found = await item.waitFor({ timeout: 60_000 }).then(() => true, () => false);
+		check(found, `yt-dlp bridge: page recognised${found ? '' : ` (${await popup.getByTestId('probe-status').textContent().catch(() => 'no status')})`}`);
+		if (found) {
+			await item.getByTestId('download').click();
+			await popup.locator('[data-testid="job"][data-state="done"], [data-testid="job"][data-state="failed"]').first().waitFor({ timeout: 120_000 });
+			const state = await popup.getByTestId('job').first().getAttribute('data-state');
+			check(state === 'done', `yt-dlp bridge: job finished (${await popup.getByTestId('job-status').first().textContent()})`);
+			const saved = readdirSync(bridgeDownloads).filter(name => name.endsWith('.mp4'));
+			check(saved.length === 1, `yt-dlp bridge: yt-dlp saved ${saved.join(', ') || 'nothing'}`);
+			if (saved[0]) {
+				const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_format', '-of', 'json', join(bridgeDownloads, saved[0])]).toString());
+				check(Math.abs(Number(probe.format.duration) - 12) < 0.5, `yt-dlp bridge: saved file is the ${Number(probe.format.duration).toFixed(1)}s video`);
+			}
+		}
 		await popup.close();
 		await page.close();
 	}

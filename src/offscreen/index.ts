@@ -5,8 +5,9 @@ import { mergeVtt } from '../core/vtt';
 import type { JobRequest } from '../core/types';
 import { fetchOk, withRetry } from '../engine/fetching';
 import { downloadFile } from '../engine/file';
+import { makePreview } from '../engine/preview';
 import { downloadDash, downloadHls, type EngineHooks } from '../engine/remux';
-import { isEngineCommand, type EngineEvent } from '../shared/messages';
+import { isEngineCommand, type EngineEvent, type Preview } from '../shared/messages';
 
 type Running = {
 	stop: AbortController;
@@ -176,6 +177,12 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, respond) => {
 			job.keep = message.keep;
 			job.stop.abort();
 		}
+	} else if (message.type === 'preview') {
+		const timeout = new Promise<Preview>(resolve => setTimeout(() => resolve({}), 20_000));
+		void Promise.race([makePreview(message.kind, message.url, makeFetch(message.id)), timeout])
+			.catch((): Preview => ({}))
+			.then(respond);
+		return true;
 	} else {
 		// Answered only once the file is gone, because the service worker closes this document right after.
 		void release(message.jobId).finally(() => respond(true));

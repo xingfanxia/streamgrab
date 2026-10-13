@@ -1,15 +1,31 @@
-import type { DetectedMedia, Job } from '../core/types';
+import { arrange, DEFAULT_PREFS, estimateSize, type ListPrefs } from '../core/arrange';
+import { cleanTitle } from '../core/naming';
+import type { DetectedMedia, Job, Variant } from '../core/types';
 import { emptyState, STATE_KEY, type State, type UiCommand } from '../shared/messages';
 
 const t = (key: string, substitution?: string) => chrome.i18n.getMessage(key, substitution);
 const send = (command: UiCommand) => chrome.runtime.sendMessage(command);
+const byId = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 
-const mediaList = document.querySelector<HTMLUListElement>('#media')!;
-const jobList = document.querySelector<HTMLUListElement>('#jobs')!;
-const emptyNote = document.querySelector<HTMLParagraphElement>('#empty')!;
+const mediaList = byId<HTMLUListElement>('media');
+const jobList = byId<HTMLUListElement>('jobs');
+const finishedList = byId<HTMLUListElement>('finished');
+const tray = byId('tray');
+const emptyNote = byId('empty');
+const probeNote = byId('probe');
+const filters = byId('filters');
+const hiddenNote = byId('hidden-note');
+const sortSelect = byId<HTMLSelectElement>('sort');
+const durationSelect = byId<HTMLSelectElement>('min-duration');
 
-/** Variant chosen per media key, kept across re-renders. */
-const chosenVariant = new Map<string, string>();
+const PREFS_KEY = 'listPrefs';
+let prefs: ListPrefs = DEFAULT_PREFS;
+
+/** Sites that yt-dlp handles and network detection cannot; their pages are checked as soon as the popup opens. */
+const PAGE_SITES = /(^|\.)(youtube\.com|youtu\.be|bilibili\.com|b23\.tv|twitch\.tv|tiktok\.com|douyin\.com|vimeo\.com|dailymotion\.com|nicovideo\.jp|soundcloud\.com)$/;
+
+/** Media whose list of other ways to save is open, kept across re-renders. */
+const expanded = new Set<string>();
 let renderedMedia = '';
 
 const el = <K extends keyof HTMLElementTagNameMap>(
@@ -30,7 +46,7 @@ const formatBytes = (bytes: number) => {
 	if (bytes < 1e6) {
 		return `${Math.max(1, Math.round(bytes / 1e3))} KB`;
 	}
-	return bytes < 1e9 ? `${(bytes / 1e6).toFixed(1)} MB` : `${(bytes / 1e9).toFixed(2)} GB`;
+	return bytes < 1e9 ? `${(bytes / 1e6).toFixed(bytes < 1e7 ? 1 : 0)} MB` : `${(bytes / 1e9).toFixed(2)} GB`;
 };
 
 const formatDuration = (seconds: number) => {
@@ -40,92 +56,124 @@ const formatDuration = (seconds: number) => {
 	return shown.map((part, i) => (i === 0 ? String(part) : String(part).padStart(2, '0'))).join(':');
 };
 
-const kindLabel = (media: DetectedMedia) => {
-	if (media.kind === 'hls') {
-		return t('kindHls');
+const kindTag = (media: DetectedMedia) => {
+	if (media.kind === 'page') {
+		return media.site || 'yt-dlp';
 	}
-	if (media.kind === 'dash') {
-		return t('kindDash');
-	}
-	return t('kindFile', (media.ext ?? 'mp4').toUpperCase());
+	return media.kind === 'file' ? (media.ext ?? 'file').toUpperCase() : media.kind.toUpperCase();
 };
 
-const variantLabel = (variant: DetectedMedia['variants'][number]) => {
-	const size = variant.height ? `${variant.height}p` : '';
-	const rate = variant.bitrate ? `${(variant.bitrate / 1e6).toFixed(variant.bitrate < 1e6 ? 2 : 1)} Mbps` : '';
-	return [size, rate].filter(Boolean).join(', ') || variant.id;
+const qualityLabel = (variant: Variant) => {
+	if (variant.height) {
+		// The shorter side is what people mean by "1080p", including for upright video.
+		return `${Math.min(variant.height, variant.width ?? variant.height)}p`;
+	}
+	return variant.bitrate ? `${Math.round(variant.bitrate / 1000)} kbps` : variant.id;
+};
+
+const sizeLabel = (media: DetectedMedia, variant?: Variant) => {
+	const size = estimateSize(media, variant);
+	return size ? `${size.exact ? '' : '~'}${formatBytes(size.bytes)}` : '';
 };
 
 const fileNameOf = (url: string) => decodeURIComponent(new URL(url).pathname.split('/').pop() || url);
 
-const renderMediaItem = (media: DetectedMedia) => {
-	const facts = el('div', { className: 'facts' }, [el('span', { className: 'kind', textContent: kindLabel(media) })]);
+const start = (media: DetectedMedia, options: { variantId?: string | null; audioOnly?: boolean; subtitleUrl?: string }) => send({
+	type: 'download',
+	tabId: media.tabId,
+	key: media.key,
+	variantId: options.variantId ?? media.variants[0]?.id ?? null,
+	audioOnly: options.audioOnly ?? false,
+	subtitleUrl: options.subtitleUrl,
+});
+
+/** One other way to save an item: a quality, the audio alone, or a subtitle track. */
+const optionRow = (label: string, detail: string, testid: string, onPick: () => void) => (
+	el('button', { className: 'option', testid, onclick: onPick }, [
+		el('span', { className: 'what', textContent: label }),
+		el('span', { className: 'detail', textContent: detail }),
+	])
+);
+
+const renderOptions = (media: DetectedMedia) => {
+	const rows: HTMLElement[] = [];
+	if (media.variants.length > 1) {
+		for (const variant of media.variants) {
+			const rate = variant.bitrate ? `${(variant.bitrate / 1e6).toFixed(1)} Mbps` : '';
+			const row = optionRow(qualityLabel(variant), [rate, sizeLabel(media, variant)].filter(Boolean).join('   '), 'quality', () => start(media, { variantId: variant.id }));
+			row.dataset.height = String(variant.height ?? '');
+			rows.push(row);
+		}
+	}
+	if (media.hasVideo && media.kind !== 'file') {
+		rows.push(optionRow(t('audioOnly'), 'M4A', 'audio-only', () => start(media, { audioOnly: true })));
+	}
+	for (const track of media.subtitles ?? []) {
+		rows.push(optionRow(t('subtitlesIn', track.label), media.kind === 'page' ? 'SRT' : 'VTT', 'subtitle', () => start(media, { subtitleUrl: track.url })));
+	}
+	return rows;
+};
+
+const renderMediaItem = (media: DetectedMedia, tabTitle: string) => {
+	// Network-detected media carries no title of its own, so it takes the tab's current one, as the saved file will.
+	const title = (media.kind === 'page' ? media.pageTitle : cleanTitle(tabTitle) || media.pageTitle) || fileNameOf(media.url);
+
+	const shot = el('div', { className: 'shot' });
+	if (media.thumbnail) {
+		shot.append(el('img', { src: media.thumbnail, alt: '', testid: 'thumbnail' }));
+	} else if (!media.hasVideo) {
+		shot.classList.add('audio');
+	}
+	shot.append(el('span', { className: 'tag', textContent: kindTag(media) }));
 	if (media.live) {
-		facts.append(el('span', { className: 'live', textContent: t('live') }));
-	}
-	if (media.duration) {
-		facts.append(el('span', { textContent: formatDuration(media.duration) }));
-	}
-	if (media.size) {
-		facts.append(el('span', { textContent: formatBytes(media.size) }));
-	}
-	if (!media.hasVideo) {
-		facts.append(el('span', { textContent: t('kindAudio') }));
+		shot.append(el('span', { className: 'time live', textContent: t('live') }));
+	} else if (media.duration) {
+		shot.append(el('span', { className: 'time', textContent: formatDuration(media.duration), testid: 'duration' }));
 	}
 
-	const item = el('li', { testid: 'media-item' }, [
-		el('div', { className: 'title', textContent: media.pageTitle || fileNameOf(media.url), title: media.url }),
-		facts,
+	const best = media.variants[0];
+	const facts = [best && media.hasVideo ? qualityLabel(best) : '', sizeLabel(media, best), media.hasVideo ? '' : t('kindAudio')].filter(Boolean);
+	const body = el('div', { className: 'body' }, [
+		el('div', { className: 'title', textContent: title, title }),
+		el('div', { className: 'facts' }, facts.map((fact, index) => el('span', { textContent: fact, testid: index === 1 || facts.length === 1 ? 'size' : '' }))),
 	]);
+
+	const item = el('li', { className: 'item', testid: 'media-item' }, [shot, body]);
 	item.dataset.kind = media.kind;
 
 	if (media.drm) {
-		item.append(el('p', { className: 'blocked', textContent: t('blocked', media.drm), testid: 'blocked' }));
+		body.append(el('p', { className: 'blocked', textContent: t('blocked', media.drm), testid: 'blocked' }));
 		return item;
 	}
 
-	const actions = el('div', { className: 'actions' });
-	let select: HTMLSelectElement | null = null;
-	if (media.variants.length > 1) {
-		select = el('select', { testid: 'quality' }, media.variants.map(variant => (
-			el('option', { value: variant.id, textContent: variantLabel(variant) })
-		)));
-		select.value = chosenVariant.get(media.key) ?? media.variants[0]!.id;
-		select.addEventListener('change', () => chosenVariant.set(media.key, select!.value));
-		actions.append(select);
-	}
+	const actions = el('div', { className: 'actions' }, [
+		el('button', {
+			className: 'primary',
+			textContent: media.live ? t('record') : t('download'),
+			testid: 'download',
+			onclick: () => start(media, {}),
+		}),
+	]);
+	body.append(actions);
 
-	const start = (audioOnly: boolean) => send({
-		type: 'download',
-		tabId: media.tabId,
-		key: media.key,
-		variantId: select?.value ?? media.variants[0]?.id ?? null,
-		audioOnly,
-	});
-	if (media.hasVideo && media.kind !== 'file') {
-		actions.append(el('button', { className: 'quiet', textContent: t('audioOnly'), testid: 'audio-only', onclick: () => start(true) }));
-	}
-	actions.append(el('button', {
-		className: 'primary',
-		textContent: t(media.live ? 'record' : 'download'),
-		testid: 'download',
-		onclick: () => start(false),
-	}));
-
-	item.append(actions);
-
-	if (media.subtitles?.length) {
-		const subtitles = el('select', { testid: 'subtitles' }, [
-			el('option', { value: '', textContent: t('subtitles') }),
-			...media.subtitles.map(track => el('option', { value: track.url, textContent: track.label })),
-		]);
-		subtitles.addEventListener('change', () => {
-			if (subtitles.value) {
-				void send({ type: 'download', tabId: media.tabId, key: media.key, variantId: null, audioOnly: false, subtitleUrl: subtitles.value });
-				subtitles.value = '';
+	const options = renderOptions(media);
+	if (options.length > 0) {
+		const panel = el('div', { className: 'options', testid: 'options' }, options);
+		const toggle = el('button', { className: 'more', textContent: t('otherWays'), testid: 'more' });
+		const sync = () => {
+			const open = expanded.has(media.key);
+			panel.hidden = !open;
+			toggle.setAttribute('aria-expanded', String(open));
+		};
+		toggle.addEventListener('click', () => {
+			if (!expanded.delete(media.key)) {
+				expanded.add(media.key);
 			}
+			sync();
 		});
-		item.append(el('div', { className: 'actions' }, [subtitles]));
+		sync();
+		actions.append(toggle);
+		item.append(panel);
 	}
 	return item;
 };
@@ -135,61 +183,115 @@ const jobStatus = (job: Job) => {
 		return t('stateFailed', job.error ?? '');
 	}
 	if (job.state === 'running') {
-		const label = job.progress === null ? t('stateRecording') : `${t('stateRunning')} ${Math.round(job.progress * 100)}%`;
-		return `${label}, ${formatBytes(job.bytes)}`;
+		const label = job.progress === null ? t('stateRecording') : `${Math.round(job.progress * 100)}%`;
+		return `${label}   ${formatBytes(job.bytes)}`;
 	}
-	const key = { saving: 'stateSaving', done: 'stateDone', canceled: 'stateCanceled', queued: 'stateRunning' }[job.state];
-	return job.state === 'done' ? `${t(key)}, ${formatBytes(job.bytes)}` : t(key);
+	if (job.state === 'done') {
+		return formatBytes(job.bytes);
+	}
+	return t({ saving: 'stateSaving', canceled: 'stateCanceled', queued: 'stateRunning' }[job.state]);
 };
 
-const renderJob = (job: Job) => {
+const renderRunning = (job: Job) => {
 	const bar = el('div', { className: 'segments' });
 	if (job.state === 'running' && job.progress === null) {
 		bar.classList.add('unknown');
-	} else if (job.state === 'done' || job.state === 'saving') {
-		bar.classList.add('done');
-	} else if (job.state === 'failed' || job.state === 'canceled') {
-		bar.classList.add('failed');
 	} else {
-		bar.style.setProperty('--filled', `${Math.round((job.progress ?? 0) * 100)}%`);
+		bar.style.setProperty('--filled', `${Math.round((job.state === 'saving' ? 1 : job.progress ?? 0) * 100)}%`);
 	}
 
-	const status = el('div', { className: 'status' }, [
-		el('span', { className: job.state === 'failed' ? 'error' : '', textContent: jobStatus(job), testid: 'job-status' }),
+	const live = job.progress === null;
+	const line = el('div', { className: 'line' }, [
+		el('span', { className: 'title', textContent: job.filename, title: job.filename }),
+		el('span', { className: 'status', textContent: jobStatus(job), testid: 'job-status' }),
 	]);
 	if (job.state === 'running') {
-		const live = job.progress === null;
-		status.append(el('button', {
+		line.append(el('button', {
 			className: 'quiet',
 			textContent: t(live ? 'stopAndSave' : 'cancel'),
 			testid: 'stop',
 			onclick: () => send({ type: 'stop', jobId: job.id, keep: live }),
 		}));
-	} else if (job.state !== 'saving') {
-		status.append(el('button', { className: 'quiet', textContent: t('clear'), testid: 'clear', onclick: () => send({ type: 'dismiss', jobId: job.id }) }));
 	}
 
-	const item = el('li', { testid: 'job' }, [el('div', { className: 'title', textContent: job.filename }), bar, status]);
+	const item = el('li', { testid: 'job' }, [line, bar]);
 	item.dataset.state = job.state;
 	return item;
 };
 
-const render = (state: State, tabId: number) => {
-	const media = Object.values(state.media[tabId] ?? {}).sort((a, b) => (
-		Number(b.kind !== 'file') - Number(a.kind !== 'file') || b.detectedAt - a.detectedAt
-	));
+/** A job that has ended takes one quiet line: what it was, how it went, and what can still be done with it. */
+const renderFinished = (job: Job) => {
+	const item = el('li', { testid: 'job' }, [
+		el('span', { className: 'mark' }),
+		el('span', { className: 'title', textContent: job.filename, title: job.filename }),
+		el('span', { className: 'status', textContent: jobStatus(job), title: job.error ?? '', testid: 'job-status' }),
+	]);
+	if (job.state === 'done' && job.downloadId !== undefined) {
+		item.append(el('button', { className: 'quiet', textContent: t('showFile'), testid: 'show', onclick: () => send({ type: 'reveal', jobId: job.id }) }));
+	}
+	item.append(el('button', { className: 'quiet', textContent: t('clear'), testid: 'clear', onclick: () => send({ type: 'dismiss', jobId: job.id }) }));
+	item.dataset.state = job.state;
+	return item;
+};
+
+/** The line about yt-dlp: a way to ask it about this page, or what came of asking. */
+const renderProbe = (state: State, tab: chrome.tabs.Tab, found: boolean) => {
+	const probe = state.probes[tab.id!];
+	const current = probe?.url === tab.url ? probe : undefined;
+	probeNote.replaceChildren();
+	probeNote.hidden = found || !/^https?:/.test(tab.url ?? '');
+	if (probeNote.hidden) {
+		return;
+	}
+
+	if (current?.status === 'running') {
+		probeNote.append(el('span', { textContent: t('probeRunning'), testid: 'probe-status' }));
+	} else if (current?.status === 'missing') {
+		probeNote.append(el('span', { textContent: t('probeMissing'), testid: 'probe-status' }));
+	} else if (current?.status === 'failed') {
+		probeNote.append(el('span', { textContent: t('probeFailed', current.message ?? ''), title: current.message ?? '', testid: 'probe-status' }));
+	} else {
+		probeNote.append(el('button', {
+			className: 'quiet',
+			textContent: t('probe'),
+			testid: 'probe',
+			onclick: () => send({ type: 'probe', tabId: tab.id! }),
+		}));
+	}
+};
+
+const render = (state: State, tab: chrome.tabs.Tab) => {
+	const tabId = tab.id!;
+	// A page item belongs to one address; on sites that navigate without reloading, older ones no longer apply.
+	const all = Object.values(state.media[tabId] ?? {}).filter(item => item.kind !== 'page' || item.url === tab.url);
+	const { shown: media, hidden } = arrange(all, prefs);
 	const jobs = Object.values(state.jobs).sort((a, b) => b.startedAt - a.startedAt);
 
-	// The media list is only rebuilt when it changes, so progress updates never close an open quality menu.
-	const signature = media.map(item => item.key).join();
+	// The list is only rebuilt when it changes, so progress updates never disturb an open set of options.
+	const signature = media.map(item => `${item.key}|${item.thumbnail ? 1 : 0}|${item.duration ?? ''}`).join() + tab.title + prefs.sort + prefs.minDuration;
 	if (signature !== renderedMedia) {
 		renderedMedia = signature;
-		mediaList.replaceChildren(...media.map(renderMediaItem));
+		mediaList.replaceChildren(...media.map(item => renderMediaItem(item, tab.title ?? '')));
+		if (all.some(item => !item.previewed)) {
+			void send({ type: 'preview', tabId });
+		}
 	}
-	jobList.replaceChildren(...jobs.map(renderJob));
 
-	emptyNote.hidden = media.length > 0 || jobs.length > 0;
-	emptyNote.textContent = t('empty');
+	// Sorting and filtering only earn their space once there is something to sort through.
+	filters.hidden = all.length < 2;
+	byId('count').textContent = t('mediaHeading', String(all.length));
+	hiddenNote.hidden = hidden === 0;
+	hiddenNote.textContent = t('hiddenByFilter', String(hidden));
+	renderProbe(state, tab, all.some(item => item.kind === 'page'));
+
+	const running = jobs.filter(job => job.state === 'running' || job.state === 'saving' || job.state === 'queued');
+	const finished = jobs.filter(job => !running.includes(job));
+	jobList.replaceChildren(...running.map(renderRunning));
+	finishedList.replaceChildren(...finished.map(renderFinished));
+	tray.hidden = jobs.length === 0;
+	byId('clear-finished').hidden = finished.length < 2;
+
+	emptyNote.hidden = all.length > 0 || state.probes[tabId]?.status === 'running';
 };
 
 const main = async () => {
@@ -202,20 +304,61 @@ const main = async () => {
 		return;
 	}
 	const tabId = tab.id;
+	let current = tab;
 
 	try {
-		document.querySelector('#host')!.textContent = new URL(tab.url ?? '').host;
+		byId('host').textContent = new URL(tab.url ?? '').host;
 	} catch {
 		// Tabs without a readable URL simply show no host.
 	}
+	byId('empty-title').textContent = t('emptyTitle');
+	byId('empty-text').textContent = t('empty');
+	byId('tray-heading').textContent = t('downloadsHeading');
+	byId('clear-finished').textContent = t('clearFinished');
+	byId('clear-finished').addEventListener('click', () => void send({ type: 'clearFinished' }));
+
+	prefs = { ...DEFAULT_PREFS, ...((await chrome.storage.local.get(PREFS_KEY))[PREFS_KEY] as ListPrefs | undefined) };
+	sortSelect.replaceChildren(...(['newest', 'longest', 'largest'] as const).map(value => (
+		el('option', { value, textContent: t(`sort_${value}`) })
+	)));
+	durationSelect.replaceChildren(...[0, 60, 300, 1200].map(seconds => (
+		el('option', { value: String(seconds), textContent: seconds ? t('longerThan', String(seconds / 60)) : t('anyLength') })
+	)));
+	sortSelect.value = prefs.sort;
+	durationSelect.value = String(prefs.minDuration);
 
 	const stored = await chrome.storage.session.get(STATE_KEY);
-	render((stored[STATE_KEY] as State | undefined) ?? emptyState(), tabId);
+	let state: State = { ...emptyState(), ...(stored[STATE_KEY] as State | undefined) };
+	const onPrefs = () => {
+		prefs = { sort: sortSelect.value as ListPrefs['sort'], minDuration: Number(durationSelect.value) };
+		void chrome.storage.local.set({ [PREFS_KEY]: prefs });
+		render(state, current);
+	};
+	sortSelect.addEventListener('change', onPrefs);
+	durationSelect.addEventListener('change', onPrefs);
+
+	render(state, current);
 	chrome.storage.session.onChanged.addListener(changes => {
 		if (changes[STATE_KEY]) {
-			render((changes[STATE_KEY].newValue as State | undefined) ?? emptyState(), tabId);
+			state = { ...emptyState(), ...(changes[STATE_KEY].newValue as State | undefined) };
+			render(state, current);
 		}
 	});
+	// Titles and addresses change under an open popup on sites that navigate without reloading.
+	chrome.tabs.onUpdated.addListener((updatedId, _change, updated) => {
+		if (updatedId === tabId) {
+			current = updated;
+			render(state, current);
+		}
+	});
+
+	try {
+		if (PAGE_SITES.test(new URL(tab.url ?? '').hostname)) {
+			void send({ type: 'probe', tabId });
+		}
+	} catch {
+		// No readable address, nothing to ask yt-dlp about.
+	}
 };
 
 void main();

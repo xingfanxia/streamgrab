@@ -10,6 +10,9 @@ export const sanitizeBasename = (text: string): string => {
 	return [...cleaned].slice(0, MAX_BASENAME).join('').trim() || 'video';
 };
 
+/** Removes the unread counter some sites prepend to the tab title, such as `(4) Home`. */
+export const cleanTitle = (title: string): string => title.replace(/^\(\d+\+?\)\s*/, '').trim();
+
 /** Small non-cryptographic string hash, used only as a de-duplication key. */
 export const hashString = (text: string): string => {
 	let a = 0x811c9dc5;

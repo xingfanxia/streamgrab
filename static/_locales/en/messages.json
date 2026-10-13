@@ -6,30 +6,13 @@
 		"message": "Saves the video or audio playing on the current page: direct files, HLS and DASH streams."
 	},
 	"empty": {
-		"message": "Nothing to grab yet. Start playing the video and it will show up here."
-	},
-	"kindHls": {
-		"message": "HLS stream"
-	},
-	"kindDash": {
-		"message": "DASH stream"
-	},
-	"kindFile": {
-		"message": "$EXT$ file",
-		"placeholders": {
-			"ext": {
-				"content": "$1"
-			}
-		}
+		"message": "Start playing the video on this page and it will show up here."
 	},
 	"kindAudio": {
 		"message": "Audio"
 	},
 	"live": {
 		"message": "Live"
-	},
-	"best": {
-		"message": "Best available"
 	},
 	"download": {
 		"message": "Download"
@@ -66,9 +49,6 @@
 	"stateSaving": {
 		"message": "Saving to Downloads"
 	},
-	"stateDone": {
-		"message": "Saved to Downloads"
-	},
 	"stateCanceled": {
 		"message": "Canceled"
 	},
@@ -80,7 +60,80 @@
 			}
 		}
 	},
-	"subtitles": {
-		"message": "Save subtitles…"
+	"probe": {
+		"message": "Look for media on this page with yt-dlp"
+	},
+	"probeRunning": {
+		"message": "Asking yt-dlp about this page…"
+	},
+	"probeMissing": {
+		"message": "The yt-dlp bridge isn't installed. Run “npm run install-host” in the streamgrab folder."
+	},
+	"probeFailed": {
+		"message": "yt-dlp found nothing here. $REASON$",
+		"placeholders": {
+			"reason": {
+				"content": "$1"
+			}
+		}
+	},
+	"mediaHeading": {
+		"message": "$N$ on this page",
+		"placeholders": {
+			"n": {
+				"content": "$1"
+			}
+		}
+	},
+	"downloadsHeading": {
+		"message": "Downloads"
+	},
+	"clearFinished": {
+		"message": "Clear finished"
+	},
+	"hiddenByFilter": {
+		"message": "$N$ shorter ones are hidden by the length filter.",
+		"placeholders": {
+			"n": {
+				"content": "$1"
+			}
+		}
+	},
+	"anyLength": {
+		"message": "Any length"
+	},
+	"longerThan": {
+		"message": "Over $M$ min",
+		"placeholders": {
+			"m": {
+				"content": "$1"
+			}
+		}
+	},
+	"sort_newest": {
+		"message": "Newest first"
+	},
+	"sort_longest": {
+		"message": "Longest first"
+	},
+	"sort_largest": {
+		"message": "Largest first"
+	},
+	"subtitlesIn": {
+		"message": "Subtitles, $LANG$",
+		"placeholders": {
+			"lang": {
+				"content": "$1"
+			}
+		}
+	},
+	"otherWays": {
+		"message": "Other ways"
+	},
+	"showFile": {
+		"message": "Show"
+	},
+	"emptyTitle": {
+		"message": "Nothing to grab yet"
 	}
 }

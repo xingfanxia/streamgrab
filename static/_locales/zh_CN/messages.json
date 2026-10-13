@@ -6,30 +6,13 @@
 		"message": "保存当前页面正在播放的视频或音频：直链文件、HLS 和 DASH 流。"
 	},
 	"empty": {
-		"message": "还没有可保存的内容。开始播放视频后会出现在这里。"
-	},
-	"kindHls": {
-		"message": "HLS 流"
-	},
-	"kindDash": {
-		"message": "DASH 流"
-	},
-	"kindFile": {
-		"message": "$EXT$ 文件",
-		"placeholders": {
-			"ext": {
-				"content": "$1"
-			}
-		}
+		"message": "在这个页面上开始播放视频，它就会出现在这里。"
 	},
 	"kindAudio": {
 		"message": "音频"
 	},
 	"live": {
 		"message": "直播"
-	},
-	"best": {
-		"message": "最高画质"
 	},
 	"download": {
 		"message": "下载"
@@ -66,9 +49,6 @@
 	"stateSaving": {
 		"message": "正在存入下载目录"
 	},
-	"stateDone": {
-		"message": "已存入下载目录"
-	},
 	"stateCanceled": {
 		"message": "已取消"
 	},
@@ -80,7 +60,80 @@
 			}
 		}
 	},
-	"subtitles": {
-		"message": "保存字幕…"
+	"probe": {
+		"message": "用 yt-dlp 查找此页面上的媒体"
+	},
+	"probeRunning": {
+		"message": "正在让 yt-dlp 解析此页面…"
+	},
+	"probeMissing": {
+		"message": "尚未安装 yt-dlp 桥接。请在 streamgrab 目录运行 “npm run install-host”。"
+	},
+	"probeFailed": {
+		"message": "yt-dlp 在此页面没有找到内容。$REASON$",
+		"placeholders": {
+			"reason": {
+				"content": "$1"
+			}
+		}
+	},
+	"mediaHeading": {
+		"message": "本页共 $N$ 个",
+		"placeholders": {
+			"n": {
+				"content": "$1"
+			}
+		}
+	},
+	"downloadsHeading": {
+		"message": "下载"
+	},
+	"clearFinished": {
+		"message": "清除已结束"
+	},
+	"hiddenByFilter": {
+		"message": "有 $N$ 个较短的被时长过滤隐藏了。",
+		"placeholders": {
+			"n": {
+				"content": "$1"
+			}
+		}
+	},
+	"anyLength": {
+		"message": "不限时长"
+	},
+	"longerThan": {
+		"message": "超过 $M$ 分钟",
+		"placeholders": {
+			"m": {
+				"content": "$1"
+			}
+		}
+	},
+	"sort_newest": {
+		"message": "最新在前"
+	},
+	"sort_longest": {
+		"message": "最长在前"
+	},
+	"sort_largest": {
+		"message": "最大在前"
+	},
+	"subtitlesIn": {
+		"message": "字幕，$LANG$",
+		"placeholders": {
+			"lang": {
+				"content": "$1"
+			}
+		}
+	},
+	"otherWays": {
+		"message": "其他方式"
+	},
+	"showFile": {
+		"message": "显示"
+	},
+	"emptyTitle": {
+		"message": "还没有可保存的内容"
 	}
 }

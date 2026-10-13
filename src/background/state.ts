@@ -4,7 +4,7 @@ let cached: Promise<State> | null = null;
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 
 export const loadState = (): Promise<State> => {
-	cached ??= chrome.storage.session.get(STATE_KEY).then(stored => (stored[STATE_KEY] as State | undefined) ?? emptyState());
+	cached ??= chrome.storage.session.get(STATE_KEY).then(stored => ({ ...emptyState(), ...(stored[STATE_KEY] as State | undefined) }));
 	return cached;
 };
 

@@ -65,6 +65,14 @@ const describe = async (
 	};
 };
 
+const manifestAddress = (media: DetectedMedia) => {
+	if (media.kind !== 'hls' && media.kind !== 'dash') {
+		return null;
+	}
+	const url = new URL(media.url);
+	return url.origin + url.pathname;
+};
+
 const register = async (media: DetectedMedia) => {
 	await mutate(state => {
 		const tab = state.media[media.tabId] ??= {};
@@ -81,6 +89,13 @@ const register = async (media: DetectedMedia) => {
 			if (media.childUrls?.includes(item.url)) {
 				delete tab[item.key];
 			}
+		}
+
+		// Players often request one stream's manifest more than once with different query strings, and servers may
+		// answer each with slightly different text. Same address apart from the query means same stream.
+		const address = manifestAddress(media);
+		if (address && Object.values(tab).some(item => manifestAddress(item) === address)) {
+			return;
 		}
 
 		tab[media.key] = media;
@@ -155,6 +170,7 @@ export const onResponseStarted = async (details: chrome.webRequest.OnResponseSta
 export const forgetTab = async (tabId: number) => {
 	await mutate(state => {
 		delete state.media[tabId];
+		delete state.probes[tabId];
 	});
 	await updateBadge(tabId);
 };

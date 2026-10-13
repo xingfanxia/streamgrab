@@ -1,8 +1,9 @@
-import { sanitizeBasename } from '../core/naming';
+import { cleanTitle, sanitizeBasename } from '../core/naming';
 import type { DetectedMedia, Job, JobRequest } from '../core/types';
 import type { EngineCommand, EngineEvent, UiCommand } from '../shared/messages';
 import { newRuleId, removeHeaderRule, setHeaderRule } from './headers';
 import { loadState, mutate } from './state';
+import { startPageDownload, stopPageDownload } from './ytdlp';
 
 /** Per running job: the header rule, the headers it replays and the hosts it covers so far. */
 type JobRule = { ruleId: number; headers: Record<string, string>; hosts: string[] };
@@ -16,8 +17,10 @@ const readMap = async <T>(key: string): Promise<Record<string, T>> => (
 const writeMap = (key: string, value: Record<string, unknown>) => chrome.storage.session.set({ [key]: value });
 
 let engineReady: Promise<void> | null = null;
+/** Work other than jobs (previews) that needs the engine document kept open. */
+let engineHolds = 0;
 
-const ensureEngine = () => {
+export const ensureEngine = () => {
 	engineReady ??= (async () => {
 		if (!await chrome.offscreen.hasDocument()) {
 			await chrome.offscreen.createDocument({
@@ -32,18 +35,34 @@ const ensureEngine = () => {
 	return engineReady;
 };
 
-const sendToEngine = (command: EngineCommand) => chrome.runtime.sendMessage(command);
+export const sendToEngine = (command: EngineCommand) => chrome.runtime.sendMessage(command);
+
+/** Keeps the engine document open until the returned function is called. */
+export const holdEngine = () => {
+	engineHolds++;
+	return async () => {
+		engineHolds--;
+		await closeEngineIfIdle();
+	};
+};
 
 const isActive = (job: Job) => job.state === 'queued' || job.state === 'running' || job.state === 'saving';
 
 const closeEngineIfIdle = async () => {
 	const state = await loadState();
-	if (!Object.values(state.jobs).some(isActive) && await chrome.offscreen.hasDocument()) {
+	if (engineHolds === 0 && !Object.values(state.jobs).some(isActive) && await chrome.offscreen.hasDocument()) {
 		await chrome.offscreen.closeDocument().catch(() => {});
 	}
 };
 
-const dropRule = async (jobId: string) => {
+/** Starts replaying `headers` for the requests the engine makes under `id`; hosts are added as it meets them. */
+export const openRule = async (id: string, headers: Record<string, string>) => {
+	const rules = await readMap<JobRule>(RULES_KEY);
+	rules[id] = { ruleId: newRuleId(), headers, hosts: [] };
+	await writeMap(RULES_KEY, rules);
+};
+
+export const dropRule = async (jobId: string) => {
 	const rules = await readMap<JobRule>(RULES_KEY);
 	const rule = rules[jobId];
 	if (rule) {
@@ -78,16 +97,19 @@ export const startDownload = async (command: Extract<UiCommand, { type: 'downloa
 	}
 
 	const tab = await chrome.tabs.get(command.tabId).catch(() => null);
-	const title = sanitizeBasename(tab?.title || media.pageTitle || new URL(media.url).hostname);
+	if (media.kind === 'page') {
+		await startPageDownload(media, command);
+		return;
+	}
+	const kind = media.kind;
+	const title = sanitizeBasename(cleanTitle(tab?.title || media.pageTitle || '') || new URL(media.url).hostname);
 	const audioOnly = command.audioOnly || !media.hasVideo;
 	const subtitle = media.subtitles?.find(track => track.url === command.subtitleUrl);
 	const ext = subtitle ? 'vtt' : extensionFor(media, audioOnly);
 	const basename = subtitle ? `${title}.${sanitizeBasename(subtitle.label)}` : title;
 	const jobId = crypto.randomUUID();
 
-	const rules = await readMap<JobRule>(RULES_KEY);
-	rules[jobId] = { ruleId: newRuleId(), headers: media.replayHeaders, hosts: [] };
-	await writeMap(RULES_KEY, rules);
+	await openRule(jobId, media.replayHeaders);
 
 	await mutate(current => {
 		current.jobs[jobId] = {
@@ -105,7 +127,7 @@ export const startDownload = async (command: Extract<UiCommand, { type: 'downloa
 
 	const request: JobRequest = {
 		jobId,
-		kind: subtitle ? 'subtitles' : media.kind,
+		kind: subtitle ? 'subtitles' : kind,
 		url: subtitle?.url ?? media.url,
 		variant: media.variants.find(variant => variant.id === command.variantId) ?? null,
 		audioOnly,
@@ -116,10 +138,27 @@ export const startDownload = async (command: Extract<UiCommand, { type: 'downloa
 	await sendToEngine({ to: 'engine', type: 'run', request });
 };
 
-export const stopDownload = (jobId: string, keep: boolean) => sendToEngine({ to: 'engine', type: 'stop', jobId, keep });
+export const stopDownload = (jobId: string, keep: boolean) => (
+	stopPageDownload(jobId) || sendToEngine({ to: 'engine', type: 'stop', jobId, keep })
+);
 
 export const dismissJob = (jobId: string) => mutate(state => {
 	delete state.jobs[jobId];
+});
+
+export const revealJob = async (jobId: string) => {
+	const downloadId = (await loadState()).jobs[jobId]?.downloadId;
+	if (downloadId !== undefined) {
+		chrome.downloads.show(downloadId);
+	}
+};
+
+export const clearFinished = () => mutate(state => {
+	for (const job of Object.values(state.jobs)) {
+		if (!isActive(job)) {
+			delete state.jobs[job.id];
+		}
+	}
 });
 
 /** Handles an engine event; the returned promise settles when the engine may proceed. */
@@ -158,6 +197,12 @@ export const onEngineEvent = async (event: EngineEvent) => {
 			url: event.blobUrl,
 			filename: job.filename,
 			conflictAction: 'uniquify',
+		});
+		await mutate(current => {
+			const saved = current.jobs[event.jobId];
+			if (saved) {
+				saved.downloadId = downloadId;
+			}
 		});
 		const downloads = await readMap<string>(DOWNLOADS_KEY);
 		downloads[downloadId] = event.jobId;

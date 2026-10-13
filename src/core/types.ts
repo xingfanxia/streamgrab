@@ -1,4 +1,5 @@
-export type MediaKind = 'file' | 'hls' | 'dash';
+/** `page` is a whole page handed to yt-dlp; the others are found by watching the network. */
+export type MediaKind = 'file' | 'hls' | 'dash' | 'page';
 
 /** A selectable quality of a detected media item. */
 export type Variant = {
@@ -32,7 +33,14 @@ export type DetectedMedia = {
 	hasVideo: boolean;
 	/** For an HLS master: absolute URLs of its variant and rendition playlists, which are not listed separately. */
 	childUrls?: string[];
+	/** Subtitle tracks. `url` is the playlist URL, or for `page` media a `manual:<lang>` / `auto:<lang>` token. */
 	subtitles?: { label: string; url: string }[];
+	/** Site name reported by yt-dlp for `page` media. */
+	site?: string;
+	/** Small JPEG data URL, or a remote image URL for `page` media. */
+	thumbnail?: string;
+	/** Set once a preview has been attempted, successful or not, so it is not retried on every popup open. */
+	previewed?: boolean;
 	detectedAt: number;
 };
 
@@ -49,13 +57,15 @@ export type Job = {
 	progress: number | null;
 	bytes: number;
 	error?: string;
+	/** Id of the browser download that holds the finished file, once it has been handed over. */
+	downloadId?: number;
 	startedAt: number;
 };
 
 /** What the offscreen engine needs to run one download. */
 export type JobRequest = {
 	jobId: string;
-	kind: MediaKind | 'subtitles';
+	kind: Exclude<MediaKind, 'page'> | 'subtitles';
 	url: string;
 	/** Chosen variant, or null for the best available. */
 	variant: Variant | null;

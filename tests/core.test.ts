@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { arrange, estimateSize } from '../src/core/arrange';
 import { classify } from '../src/core/classify';
 import { summarizeHls } from '../src/core/m3u8';
-import { sanitizeBasename } from '../src/core/naming';
+import { cleanTitle, sanitizeBasename } from '../src/core/naming';
+import type { DetectedMedia } from '../src/core/types';
 import { mergeVtt } from '../src/core/vtt';
 
 const response = (url: string, type: string, headers: Record<string, string> = {}, statusCode = 200) => (
@@ -73,5 +75,43 @@ describe('sanitizeBasename', () => {
 	it('removes characters file systems reject and keeps other scripts intact', () => {
 		expect(sanitizeBasename('  第1集: a/b\\c? "final" <cut>.  ')).toBe('第1集 a b c final cut');
 		expect(sanitizeBasename('///')).toBe('video');
+	});
+});
+
+describe('arrange', () => {
+	const item = (key: string, extra: Partial<DetectedMedia>): DetectedMedia => ({
+		key, kind: 'hls', url: `https://a/${key}`, tabId: 1, replayHeaders: {}, variants: [], hasVideo: true, detectedAt: 0, ...extra,
+	});
+	const media = [
+		item('ad', { duration: 15, variants: [{ id: '0', bitrate: 2_000_000 }], detectedAt: 3 }),
+		item('film', { duration: 5400, variants: [{ id: '0', bitrate: 4_000_000 }], detectedAt: 1 }),
+		item('pending', { detectedAt: 2 }),
+		item('clip', { kind: 'file', size: 900_000_000, duration: 120, detectedAt: 4 }),
+	];
+	const keys = (prefs: Parameters<typeof arrange>[1]) => arrange(media, prefs).shown.map(entry => entry.key);
+
+	it('hides only items known to be too short', () => {
+		const result = arrange(media, { sort: 'newest', minDuration: 60 });
+		expect(result.shown.map(entry => entry.key)).toEqual(['pending', 'film', 'clip']);
+		expect(result.hidden).toBe(1);
+	});
+
+	it('orders by duration or size, leaving unknowns last', () => {
+		expect(keys({ sort: 'longest', minDuration: 0 })).toEqual(['film', 'clip', 'ad', 'pending']);
+		expect(keys({ sort: 'largest', minDuration: 0 })).toEqual(['film', 'clip', 'ad', 'pending']);
+	});
+
+	it('estimates stream size from bitrate and duration, and reports file sizes as exact', () => {
+		expect(estimateSize(media[1]!)).toEqual({ bytes: 2_700_000_000, exact: false });
+		expect(estimateSize(media[3]!)).toEqual({ bytes: 900_000_000, exact: true });
+		expect(estimateSize(media[2]!)).toBeNull();
+	});
+});
+
+describe('cleanTitle', () => {
+	it('drops a leading unread counter and nothing else', () => {
+		expect(cleanTitle('(4) Home / X')).toBe('Home / X');
+		expect(cleanTitle('(99+) Inbox')).toBe('Inbox');
+		expect(cleanTitle('Scores (2026)')).toBe('Scores (2026)');
 	});
 });

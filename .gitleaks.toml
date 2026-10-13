@@ -1,0 +1,9 @@
+# The `key` in the extension manifest is its RSA public key. It only fixes the extension ID and is meant to be
+# published; the matching private key was discarded and is not needed to load or run the extension.
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Chrome extension public key"
+paths = ['''^static/manifest\.json$''']
+regexes = ['''MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8A[A-Za-z0-9+/=]+''']

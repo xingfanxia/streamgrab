@@ -2,12 +2,36 @@
 	"manifest_version": 3,
 	"name": "__MSG_extName__",
 	"description": "__MSG_extDescription__",
-	"version": "0.1.0",
+	"version": "0.2.0",
 	"default_locale": "en",
 	"minimum_chrome_version": "121",
-	"icons": { "16": "icons/16.png", "48": "icons/48.png", "128": "icons/128.png" },
-	"action": { "default_popup": "popup.html", "default_title": "__MSG_extName__" },
-	"background": { "service_worker": "background.js", "type": "module" },
-	"permissions": ["webRequest", "webNavigation", "declarativeNetRequest", "downloads", "offscreen", "storage", "tabs", "unlimitedStorage"],
-	"host_permissions": ["<all_urls>"]
+	"icons": {
+		"16": "icons/16.png",
+		"48": "icons/48.png",
+		"128": "icons/128.png"
+	},
+	"action": {
+		"default_popup": "popup.html",
+		"default_title": "__MSG_extName__"
+	},
+	"background": {
+		"service_worker": "background.js",
+		"type": "module"
+	},
+	"permissions": [
+		"cookies",
+		"declarativeNetRequest",
+		"downloads",
+		"nativeMessaging",
+		"offscreen",
+		"storage",
+		"tabs",
+		"unlimitedStorage",
+		"webNavigation",
+		"webRequest"
+	],
+	"host_permissions": [
+		"<all_urls>"
+	],
+	"key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAt/0owgEkg962IBjTvIK06kLwP29g0hP9MkyGUMsuSRG6IYRBFUcx56Mdr3noFgpCkz8cXLVlx8d/wWvrNCFQVoHdZ8TU37tY67isqMdieow47wMYUWJf0XfvWia6f4oVgrjrCidHp6nUvmPhUrk55exoHTF8+ijkw5UYTw7yd8qZZS4b6Wq2299r74tseEq9qlmbjf0Ih/z2AaV0RMLkre8LooijLw9WznuAShBofuINQ1TPpzPolXdczAvGqtZiOW3OwplIhVsTDpqmKMVeaT7Qn2i3mjEluPr+fYh9DPJACtaZRJopWq4hu4W5Ifm/DjkLyHRakSB1opPBEMqabwIDAQAB"
 }

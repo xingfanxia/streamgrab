@@ -10,6 +10,11 @@ It handles:
   AES-128 with a published key are supported. Live streams are recorded until you stop them.
 - **DASH** (`.mpd`): the chosen video representation and the best audio one are merged.
 - **HLS subtitles**, saved as a `.vtt` file next to the video.
+- **YouTube, Bilibili and the other sites [yt-dlp](https://github.com/yt-dlp/yt-dlp) knows**, by handing the page
+  to the copy of yt-dlp installed on your machine. See [the yt-dlp bridge](#the-yt-dlp-bridge).
+
+Each item shows a frame of the video, its length and its size (estimated for streams), so several videos on one
+page can be told apart. The list can be filtered by length and sorted by length or size.
 
 Streams are copied into an MP4 without re-encoding, so saving is as fast as the network allows and loses no quality.
 
@@ -23,11 +28,30 @@ npm run build
 Then open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and select the `dist` folder.
 Play a video, click the extension icon, and press Download. Files land in your normal downloads folder.
 
+## The yt-dlp bridge
+
+Some sites do not serve a file or a standard manifest that can be picked off the network; they need an extractor
+that is kept up to date. Rather than reimplement those, streamgrab asks yt-dlp. With `yt-dlp` and `ffmpeg`
+installed, run once:
+
+```sh
+npm run install-host                    # Google Chrome
+npm run install-host -- --browser arc   # or brave, chromium, edge
+```
+
+This registers a small native messaging host (`native/host.mjs`) that only this extension may start. On the sites
+listed in the popup's code the page is checked when the popup opens; anywhere else, use **Look for media on this
+page with yt-dlp**. Downloads are saved by yt-dlp into your Downloads folder, and subtitles can be saved as `.srt`.
+
+The extension passes the site's cookies to yt-dlp so that logged-in content works, except on YouTube, where using
+account cookies with a downloader risks the account. `npm run install-host -- --uninstall` removes the bridge.
+macOS and Linux only.
+
 ## What it does not do
 
 - **DRM.** Media protected with Widevine, PlayReady or FairPlay is listed with a note and cannot be saved.
-- **YouTube** and other sites that hide their media behind signed or site-specific APIs. Only what can be seen as
-  a file or a standard manifest on the network is detected.
+- Sites that hide their media behind signed or site-specific APIs are not detected on the network; they work
+  only through the yt-dlp bridge, and only as far as yt-dlp supports them.
 - Live DASH, DASH subtitles, and choosing between several audio languages.
 - Resuming after the browser is closed; a download in progress is lost.
 
@@ -43,6 +67,7 @@ so a download briefly needs about twice its size in free disk space.
 | `src/engine` | Fetching and remuxing, built on [Mediabunny](https://mediabunny.dev). Independent of extension APIs, so it is tested in Node. |
 | `src/core` | Pure functions: response classification, HLS and DASH summaries, WebVTT merging, file naming. |
 | `src/popup` | The popup. It renders the stored state and sends commands; it holds no state of its own. |
+| `native/host.mjs` | The yt-dlp bridge: a native messaging host that runs yt-dlp for one request and exits. |
 
 Many servers only answer when the request carries the `Referer` or `Origin` of the page that embedded the player.
 The extension remembers those two headers from the page's own request and replays them with a
@@ -64,7 +89,8 @@ npm run e2e        # loads the extension into Chromium and downloads every fixtu
 ## Licence
 
 [MIT](LICENSE). The built extension bundles [Mediabunny](https://github.com/Vanilagy/mediabunny) (MPL-2.0) and
-[mpd-parser](https://github.com/videojs/mpd-parser) (Apache-2.0).
+[mpd-parser](https://github.com/videojs/mpd-parser) (Apache-2.0), and the
+[Bricolage Grotesque](https://github.com/ateliertriay/bricolage) typeface (OFL-1.1).
 
 streamgrab was written from scratch. It shares no code with any other downloader extension.
 

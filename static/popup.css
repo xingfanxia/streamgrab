@@ -1,30 +1,47 @@
+@font-face {
+	font-family: "Bricolage Grotesque";
+	font-weight: 200 800;
+	font-display: block;
+	src: url("fonts/bricolage-grotesque.woff2") format("woff2");
+}
+
+/*
+ * The page is a viewing room: frames of video are the brightest things in it, and one signal-yellow control per
+ * frame says "take this". The tray of downloads at the bottom is a different surface so it never reads as a frame.
+ */
 :root {
 	color-scheme: light dark;
-	--paper: #eef1f4;
-	--surface: #ffffff;
-	--ink: #14212b;
-	--ink-soft: #566573;
-	--rule: #d5dce3;
-	--rec: #d93a40;
-	--rec-ink: #ffffff;
-	--tape: #2f6f8f;
-	--warn: #9a5b00;
-	--step--1: 11.5px;
-	--step-0: 13px;
-	--step-1: 15px;
+	--room: #f1f0f5;
+	--wall: #ffffff;
+	--ink: #1a1724;
+	--ink-soft: #625d70;
+	--ink-faint: #8f8a9c;
+	--rule: #dedbe6;
+	--well: #e6e3ee;
+	--signal: #f7c531;
+	--signal-ink: #1a1724;
+	--tray: #1a1724;
+	--tray-ink: #f1f0f5;
+	--tray-soft: #a39eb3;
+	--tray-rule: #332e42;
+	--warn: #a2550a;
+	--ui: "Bricolage Grotesque", "Avenir Next", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+	--text: "Avenir Next", "PingFang SC", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
 	:root {
-		--paper: #0f1a22;
-		--surface: #16252f;
-		--ink: #e6edf2;
-		--ink-soft: #93a4b1;
-		--rule: #263a47;
-		--rec: #f0555a;
-		--rec-ink: #14090a;
-		--tape: #6fb6d6;
-		--warn: #e3a94b;
+		--room: #14121b;
+		--wall: #1d1a27;
+		--ink: #f1f0f5;
+		--ink-soft: #a8a3b8;
+		--ink-faint: #77728a;
+		--rule: #2c283a;
+		--well: #262233;
+		--signal: #f7c531;
+		--tray: #0c0b11;
+		--tray-rule: #262233;
+		--warn: #f0a04b;
 	}
 }
 
@@ -33,11 +50,14 @@
 }
 
 body {
-	width: 372px;
+	display: flex;
+	width: 420px;
+	max-height: 600px;
+	flex-direction: column;
 	margin: 0;
-	background: var(--paper);
+	background: var(--room);
 	color: var(--ink);
-	font: var(--step-0)/1.4 "Avenir Next", "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif;
+	font: 13px/1.4 var(--text);
 	font-variant-numeric: tabular-nums;
 }
 
@@ -46,27 +66,28 @@ header {
 	align-items: baseline;
 	justify-content: space-between;
 	gap: 12px;
-	padding: 12px 14px 10px;
+	padding: 14px 16px 12px;
 }
 
 h1 {
 	margin: 0;
-	font-size: var(--step-1);
-	font-weight: 700;
-	letter-spacing: -0.01em;
+	font: 700 17px/1 var(--ui);
+	letter-spacing: -0.02em;
 }
 
 #host {
 	overflow: hidden;
-	color: var(--ink-soft);
-	font-size: var(--step--1);
+	color: var(--ink-faint);
+	font: 500 12px/1 var(--ui);
 	text-overflow: ellipsis;
 	white-space: nowrap;
 }
 
 main {
-	max-height: 520px;
+	min-height: 0;
+	flex: 1;
 	overflow-y: auto;
+	padding: 0 10px 10px;
 }
 
 ul {
@@ -75,135 +96,399 @@ ul {
 	list-style: none;
 }
 
-li {
-	padding: 11px 14px 12px;
-	border-top: 1px solid var(--rule);
-	background: var(--surface);
+button,
+select {
+	font: 500 12px/1 var(--ui);
+	color: inherit;
 }
 
-#jobs li {
-	background: transparent;
+button {
+	cursor: pointer;
 }
 
-.title {
+:focus-visible {
+	outline: 2px solid var(--signal);
+	outline-offset: 2px;
+}
+
+/* Filters */
+
+#filters {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 0 6px 8px;
+}
+
+#count {
+	flex: 1;
+	color: var(--ink-soft);
+	font: 500 12px/1 var(--ui);
+}
+
+select {
+	height: 26px;
+	padding: 0 6px;
+	border: 0;
+	border-radius: 13px;
+	background: var(--well);
+}
+
+/* A found item: the frame leads, because on a page with several videos it is how you tell them apart. */
+
+.item {
+	display: grid;
+	grid-template-columns: 148px 1fr;
+	gap: 0 12px;
+	padding: 8px;
+	border-radius: 14px;
+	background: var(--wall);
+}
+
+.item + .item {
+	margin-top: 8px;
+}
+
+.shot {
+	position: relative;
 	overflow: hidden;
+	aspect-ratio: 16 / 9;
+	border-radius: 8px;
+	background:
+		repeating-linear-gradient(135deg, transparent 0 7px, rgb(127 120 150 / 12%) 7px 8px),
+		var(--well);
+}
+
+.shot img {
+	display: block;
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.shot .tag,
+.shot .time {
+	position: absolute;
+	padding: 3px 6px;
+	border-radius: 5px;
+	background: rgb(12 11 17 / 78%);
+	color: #fff;
+	font: 600 10.5px/1 var(--ui);
+	letter-spacing: 0.02em;
+}
+
+.shot .tag {
+	top: 5px;
+	left: 5px;
+}
+
+.shot .time {
+	right: 5px;
+	bottom: 5px;
+	font-size: 11.5px;
+}
+
+.shot .time.live {
+	background: #e5383b;
+}
+
+.body {
+	display: flex;
+	min-width: 0;
+	flex-direction: column;
+	padding: 1px 2px 0 0;
+}
+
+.item .title {
+	display: -webkit-box;
+	overflow: hidden;
+	-webkit-box-orient: vertical;
+	-webkit-line-clamp: 2;
 	font-weight: 600;
-	text-overflow: ellipsis;
-	white-space: nowrap;
+	line-height: 1.3;
 }
 
 .facts {
 	display: flex;
-	flex-wrap: wrap;
-	gap: 2px 10px;
-	margin-top: 1px;
+	gap: 8px;
+	margin-top: 3px;
 	color: var(--ink-soft);
-	font-size: var(--step--1);
+	font: 500 12px/1.3 var(--ui);
 }
 
-.facts .kind {
-	color: var(--tape);
-	font-weight: 600;
-}
-
-.facts .live {
-	color: var(--rec);
-	font-weight: 600;
-}
-
-.facts .live::before {
-	display: inline-block;
-	width: 6px;
-	height: 6px;
-	margin-right: 4px;
-	border-radius: 50%;
-	background: currentColor;
-	content: "";
-	vertical-align: 1px;
+.facts span:empty {
+	display: none;
 }
 
 .blocked {
 	margin: 6px 0 0;
 	color: var(--warn);
-	font-size: var(--step--1);
+	font-size: 12px;
 }
 
 .actions {
 	display: flex;
 	align-items: center;
-	justify-content: flex-end;
-	gap: 8px;
-	margin-top: 9px;
-}
-
-.actions select {
-	min-width: 0;
-	flex: 1;
-}
-
-select,
-button {
-	height: 28px;
-	border: 1px solid var(--rule);
-	border-radius: 6px;
-	background: var(--paper);
-	color: inherit;
-	font: inherit;
-	font-size: var(--step--1);
-}
-
-select {
-	padding: 0 6px;
-}
-
-button {
-	padding: 0 11px;
-	cursor: pointer;
-	white-space: nowrap;
+	gap: 4px;
+	margin-top: auto;
+	padding-top: 8px;
 }
 
 button.primary {
-	border-color: transparent;
-	background: var(--rec);
-	color: var(--rec-ink);
-	font-weight: 600;
+	height: 30px;
+	padding: 0 16px;
+	border: 0;
+	border-radius: 15px;
+	background: var(--signal);
+	color: var(--signal-ink);
+	font-weight: 700;
+	font-size: 13px;
 }
 
+button.primary:hover {
+	filter: brightness(1.06);
+}
+
+button.primary:active {
+	transform: translateY(1px);
+}
+
+button.more,
 button.quiet {
-	border-color: transparent;
+	height: 30px;
+	padding: 0 10px;
+	border: 0;
+	border-radius: 15px;
 	background: none;
 	color: var(--ink-soft);
 }
 
-button:hover {
-	filter: brightness(0.96);
+button.more:hover,
+button.quiet:hover {
+	background: var(--well);
+	color: var(--ink);
 }
 
-:focus-visible {
-	outline: 2px solid var(--tape);
-	outline-offset: 2px;
+button.more::after {
+	display: inline-block;
+	width: 5px;
+	height: 5px;
+	margin: 0 0 2px 7px;
+	border: solid currentColor;
+	border-width: 0 1.5px 1.5px 0;
+	content: "";
+	transform: rotate(45deg);
+	transition: transform 0.15s;
 }
 
-/* Progress is drawn as the row of segments the stream is made of. */
+button.more[aria-expanded="true"]::after {
+	margin-bottom: -1px;
+	transform: rotate(225deg);
+}
+
+/* Other ways to save, one per row, opened in place under the item. */
+
+.options {
+	grid-column: 1 / -1;
+	margin-top: 8px;
+	padding-top: 4px;
+	border-top: 1px solid var(--rule);
+}
+
+.option {
+	display: flex;
+	width: 100%;
+	height: 32px;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 0 8px;
+	border: 0;
+	border-radius: 8px;
+	background: none;
+	text-align: left;
+}
+
+.option:hover {
+	background: var(--signal);
+	color: var(--signal-ink);
+}
+
+.option .what {
+	font-weight: 600;
+	font-size: 13px;
+}
+
+.option .detail {
+	color: var(--ink-soft);
+	white-space: pre;
+}
+
+.option:hover .detail {
+	color: inherit;
+}
+
+#hidden-note {
+	margin: 8px 6px 0;
+	color: var(--ink-soft);
+	font-size: 12px;
+}
+
+/* Nothing found yet */
+
+#empty {
+	padding: 26px 20px 22px;
+	border-radius: 14px;
+	background: var(--wall);
+	text-align: center;
+}
+
+#empty strong {
+	display: block;
+	margin-top: 14px;
+	font: 700 15px/1.2 var(--ui);
+}
+
+#empty p {
+	max-width: 30ch;
+	margin: 4px auto 0;
+	color: var(--ink-soft);
+}
+
+.reel {
+	display: flex;
+	justify-content: center;
+	gap: 4px;
+}
+
+.reel i {
+	width: 34px;
+	aspect-ratio: 16 / 10;
+	border-radius: 4px;
+	background: var(--well);
+}
+
+.reel i:nth-child(3) {
+	background: var(--signal);
+}
+
+#probe {
+	display: flex;
+	min-height: 34px;
+	align-items: center;
+	justify-content: center;
+	margin-top: 8px;
+	color: var(--ink-soft);
+	font-size: 12px;
+	text-align: center;
+}
+
+/* The tray: where taken things go. Dark in both themes, so it is plainly not part of the page's list. */
+
+#tray {
+	flex: none;
+	max-height: 45%;
+	overflow-y: auto;
+	padding: 10px 16px 12px;
+	border-radius: 16px 16px 0 0;
+	background: var(--tray);
+	color: var(--tray-ink);
+}
+
+.tray-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	min-height: 24px;
+}
+
+h2 {
+	margin: 0;
+	font: 700 13px/1 var(--ui);
+}
+
+#tray button.quiet {
+	height: 24px;
+	margin-right: -8px;
+	padding: 0 8px;
+	color: var(--tray-soft);
+}
+
+#tray button.quiet:hover {
+	background: var(--tray-rule);
+	color: var(--tray-ink);
+}
+
+#tray li {
+	padding: 8px 0 2px;
+}
+
+#tray .title {
+	min-width: 0;
+	flex: 1;
+	overflow: hidden;
+	font-weight: 500;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+#tray .status {
+	flex: none;
+	color: var(--tray-soft);
+	font: 500 12px/1 var(--ui);
+	white-space: pre;
+}
+
+.line,
+#finished li {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+
+#finished li {
+	padding: 3px 0;
+}
+
+#finished .mark {
+	width: 7px;
+	height: 7px;
+	flex: none;
+	border-radius: 50%;
+	background: var(--signal);
+}
+
+#finished [data-state="failed"] .mark,
+#finished [data-state="canceled"] .mark {
+	background: none;
+	box-shadow: inset 0 0 0 1.5px var(--tray-soft);
+}
+
+#finished [data-state="failed"] .status {
+	overflow: hidden;
+	max-width: 45%;
+	color: var(--warn);
+	text-overflow: ellipsis;
+}
+
+#jobs:not(:empty) + #finished:not(:empty) {
+	margin-top: 6px;
+	padding-top: 6px;
+	border-top: 1px solid var(--tray-rule);
+}
+
+/* Progress is drawn as the row of segments a stream is made of. */
 .segments {
 	--filled: 0%;
-	height: 8px;
-	margin: 8px 0 6px;
-	background: linear-gradient(to right, var(--tape) var(--filled), var(--rule) var(--filled));
-	mask: repeating-linear-gradient(to right, #000 0 10px, transparent 10px 12px);
+	height: 6px;
+	margin-top: 6px;
+	background: linear-gradient(to right, var(--signal) var(--filled), var(--tray-rule) var(--filled));
+	mask: repeating-linear-gradient(to right, #000 0 9px, transparent 9px 11px);
 }
 
 .segments.unknown {
-	background: linear-gradient(to right, var(--rule) 0 40%, var(--rec) 50%, var(--rule) 60% 100%) 0 0 / 300% 100%;
+	background: linear-gradient(to right, var(--tray-rule) 0 40%, var(--signal) 50%, var(--tray-rule) 60% 100%) 0 0 / 300% 100%;
 	animation: sweep 2.4s linear infinite;
-}
-
-.segments.done {
-	--filled: 100%;
-}
-
-.segments.failed {
-	background: var(--rule);
 }
 
 @keyframes sweep {
@@ -220,24 +505,8 @@ button:hover {
 	.segments.unknown {
 		animation: none;
 	}
-}
 
-.status {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 8px;
-	color: var(--ink-soft);
-	font-size: var(--step--1);
-}
-
-.status .error {
-	color: var(--warn);
-}
-
-#empty {
-	margin: 0;
-	padding: 26px 14px 30px;
-	border-top: 1px solid var(--rule);
-	color: var(--ink-soft);
+	button.more::after {
+		transition: none;
+	}
 }

@@ -19,6 +19,10 @@ const options = {
 
 await rm('dist', { recursive: true, force: true });
 await cp('static', 'dist', { recursive: true, filter: source => !source.endsWith('.svg') });
+await cp(
+	'node_modules/@fontsource-variable/bricolage-grotesque/files/bricolage-grotesque-latin-wght-normal.woff2',
+	'dist/fonts/bricolage-grotesque.woff2',
+);
 
 if (watch) {
 	await (await context(options)).watch();

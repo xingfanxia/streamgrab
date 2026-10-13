@@ -10,10 +10,28 @@
 		<span id="host"></span>
 	</header>
 	<main>
+		<div id="filters" hidden>
+			<span id="count"></span>
+			<select id="min-duration" data-testid="min-duration"></select>
+			<select id="sort" data-testid="sort"></select>
+		</div>
 		<ul id="media" data-testid="media-list"></ul>
-		<p id="empty" data-testid="empty" hidden></p>
-		<ul id="jobs" data-testid="job-list"></ul>
+		<p id="hidden-note" data-testid="hidden-note" hidden></p>
+		<div id="empty" data-testid="empty" hidden>
+			<div class="reel" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></div>
+			<strong id="empty-title"></strong>
+			<p id="empty-text"></p>
+		</div>
+		<div id="probe" hidden></div>
 	</main>
+	<section id="tray" hidden>
+		<div class="tray-head">
+			<h2 id="tray-heading"></h2>
+			<button id="clear-finished" class="quiet" data-testid="clear-finished"></button>
+		</div>
+		<ul id="jobs" data-testid="job-list"></ul>
+		<ul id="finished" data-testid="finished-list"></ul>
+	</section>
 	<script type="module" src="popup.js"></script>
 </body>
 </html>

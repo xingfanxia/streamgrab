@@ -5,10 +5,19 @@ export type State = {
 	/** Detected media per tab id, keyed by media key. */
 	media: Record<string, Record<string, DetectedMedia>>;
 	jobs: Record<string, Job>;
+	/** Outcome of asking yt-dlp about a tab's page, per tab id. */
+	probes: Record<string, Probe>;
+};
+
+export type Probe = {
+	url: string;
+	/** `missing` means the yt-dlp bridge is not installed. */
+	status: 'running' | 'found' | 'failed' | 'missing';
+	message?: string;
 };
 
 export const STATE_KEY = 'state';
-export const emptyState = (): State => ({ media: {}, jobs: {} });
+export const emptyState = (): State => ({ media: {}, jobs: {}, probes: {} });
 
 /** Sent by the popup to the service worker. */
 export type UiCommand =
@@ -17,13 +26,25 @@ export type UiCommand =
 	/** Ends a running job; `keep` saves what was received so far instead of discarding it. */
 	| { type: 'stop'; jobId: string; keep: boolean }
 	| { type: 'dismiss'; jobId: string }
-	| { type: 'forget'; tabId: number; key: string };
+	/** Removes every job that is no longer running from the list. */
+	| { type: 'clearFinished' }
+	/** Shows a finished job's file in the system file manager. */
+	| { type: 'reveal'; jobId: string }
+	| { type: 'forget'; tabId: number; key: string }
+	/** Asks yt-dlp what it can get from the tab's page. */
+	| { type: 'probe'; tabId: number }
+	/** Asks for thumbnails and durations of the tab's media that do not have them yet. */
+	| { type: 'preview'; tabId: number };
 
 /** Sent by the service worker to the offscreen engine. */
 export type EngineCommand =
 	| { to: 'engine'; type: 'run'; request: JobRequest }
 	| { to: 'engine'; type: 'stop'; jobId: string; keep: boolean }
-	| { to: 'engine'; type: 'release'; jobId: string };
+	| { to: 'engine'; type: 'release'; jobId: string }
+	/** Answered with a `Preview`. `id` scopes the header rule exactly as a job id does. */
+	| { to: 'engine'; type: 'preview'; id: string; kind: 'file' | 'hls' | 'dash'; url: string };
+
+export type Preview = { thumbnail?: string; duration?: number };
 
 /** Sent by the offscreen engine to the service worker. */
 export type EngineEvent =

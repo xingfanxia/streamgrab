@@ -1,8 +1,10 @@
 import { isEngineEvent, type UiCommand } from '../shared/messages';
 import { forgetTab, onRequestFinished, onResponseStarted, onSendHeaders, updateBadge } from './detect';
 import { removeAllHeaderRules } from './headers';
-import { dismissJob, onBrowserDownloadChanged, onEngineEvent, reconcileJobs, startDownload, stopDownload } from './jobs';
+import { clearFinished, dismissJob, revealJob, onBrowserDownloadChanged, onEngineEvent, reconcileJobs, startDownload, stopDownload } from './jobs';
+import { previewTab } from './previews';
 import { mutate } from './state';
+import { probePage } from './ytdlp';
 
 // Listeners are registered synchronously at the top level so that events wake the service worker.
 const filter: chrome.webRequest.RequestFilter = {
@@ -36,6 +38,14 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, respond) => {
 		void stopDownload(command.jobId, command.keep);
 	} else if (command?.type === 'dismiss') {
 		void dismissJob(command.jobId);
+	} else if (command?.type === 'reveal') {
+		void revealJob(command.jobId);
+	} else if (command?.type === 'clearFinished') {
+		void clearFinished();
+	} else if (command?.type === 'probe') {
+		void probePage(command.tabId);
+	} else if (command?.type === 'preview') {
+		void previewTab(command.tabId);
 	} else if (command?.type === 'forget') {
 		void mutate(state => {
 			delete state.media[command.tabId]?.[command.key];
