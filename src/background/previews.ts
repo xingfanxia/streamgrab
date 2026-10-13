@@ -1,3 +1,4 @@
+import { findPartner } from '../core/pairing';
 import type { Preview } from '../shared/messages';
 import { dropRule, ensureEngine, holdEngine, openRule, sendToEngine } from './jobs';
 import { loadState, mutate } from './state';
@@ -41,6 +42,26 @@ export const previewTab = (tabId: number) => {
 						}
 						item.thumbnail = preview.thumbnail;
 						item.duration ??= preview.duration;
+						item.tracks = preview.tracks;
+						if (preview.tracks === 'audio') {
+							item.hasVideo = false;
+						}
+
+						// Picture and sound served as two files become one item that downloads both.
+						const partner = findPartner(item, Object.values(current.media[tabId]!));
+						if (partner) {
+							const [picture, sound] = item.tracks === 'video' ? [item, partner] : [partner, item];
+							picture.audioUrl = sound.url;
+							picture.size = picture.size && sound.size ? picture.size + sound.size : undefined;
+							delete current.media[tabId]![sound.key];
+							return;
+						}
+
+						// Clips of a couple of seconds are interface effects and stickers, not something to save.
+						if (item.kind === 'file' && item.duration !== undefined && item.duration < 4 && (item.size ?? 0) < 500_000) {
+							delete current.media[tabId]![item.key];
+							return;
+						}
 
 						// Two manifests on one host with exactly the same running time are one video offered twice,
 						// for instance with and without subtitles. The fuller one is kept.

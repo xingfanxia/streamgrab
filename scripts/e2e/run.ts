@@ -239,6 +239,45 @@ try {
 		await second.close();
 	}
 
+	// Picture and sound fetched as two files must show as one item and download as one complete video.
+	{
+		writeFileSync(join(fixtures, 'split.html'), `<!doctype html><title>Split tracks</title>
+			<script>for (const name of ['picture', 'sound']) fetch('/protected/' + name + '.mp4', { headers: { Range: 'bytes=0-999' } })</script>`);
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/split.html`);
+		const popup = await openPopup(page);
+		const items = popup.getByTestId('media-item');
+		await popup.locator('[data-testid="media-item"][data-paired]').waitFor({ timeout: 30_000 }).catch(() => {});
+		check(await items.count() === 1, `split tracks: picture and sound shown as one item (${await items.count()})`);
+		await popup.getByTestId('download').click();
+		await popup.locator('[data-testid="finished-list"] [data-testid="job"]').first().waitFor({ timeout: 60_000 });
+		const probe = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', newestDownload()!]).toString());
+		const kinds = probe.streams.map((stream: { codec_type: string }) => stream.codec_type).sort().join('+');
+		check(kinds === 'audio+video' && Math.abs(Number(probe.format.duration) - 12) < 0.5, `split tracks: saved file has ${kinds}, ${Number(probe.format.duration).toFixed(1)}s`);
+		await popup.getByTestId('clear').first().click();
+		await popup.close();
+		await page.close();
+	}
+
+	// A feed: one video plays while the page has loaded others. The playing one is shown and the rest folded away.
+	{
+		writeFileSync(join(fixtures, 'feed.html'), `<!doctype html><title>Feed</title>
+			<video src="/short.mp4" muted autoplay loop></video>
+			<script>fetch('/hls/master.m3u8'); fetch('/dash/manifest.mpd')</script>`);
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/feed.html`);
+		await page.waitForFunction(() => !document.querySelector('video')!.paused);
+		const popup = await openPopup(page);
+		await popup.getByTestId('playing').waitFor({ timeout: 30_000 }).catch(() => {});
+		const items = popup.getByTestId('media-item');
+		check(await items.count() === 1 && await items.first().getAttribute('data-kind') === 'file', `feed: only the playing video is shown (${await items.count()} item)`);
+		await popup.getByTestId('others').click();
+		check(await items.count() === 3 && await popup.getByTestId('playing').count() === 1, 'feed: the others appear on request, the playing one marked');
+		await popup.screenshot({ path: join(shots, 'popup-feed.png') });
+		await popup.close();
+		await page.close();
+	}
+
 	// A page handed to yt-dlp through the native bridge: found on request, downloaded by yt-dlp itself.
 	{
 		writeFileSync(join(fixtures, 'bridge.html'), '<!doctype html><title>Bridge fixture</title><video src="/direct.mp4" controls></video>');

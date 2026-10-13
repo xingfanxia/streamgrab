@@ -14,6 +14,10 @@ It handles:
 - **YouTube, Bilibili and the other sites [yt-dlp](https://github.com/yt-dlp/yt-dlp) knows**, by handing the page
   to the copy of yt-dlp installed on your machine. See [the yt-dlp bridge](#the-yt-dlp-bridge).
 
+Two things that pages do are handled for you. When a player fetches a video's picture and sound as two separate
+files, they are shown as one item and merged on download. And on a feed that preloads the videos after the one you
+are watching, the one that is playing is shown and the rest wait behind a toggle.
+
 Each item shows a frame of the video, its length and its size (estimated for streams), so several videos on one
 page can be told apart. The list can be filtered by length and sorted by length or size.
 

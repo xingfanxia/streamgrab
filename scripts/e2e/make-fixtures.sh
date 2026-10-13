@@ -15,6 +15,13 @@ ffmpeg -v error -y -f lavfi -i "testsrc2=size=640x360:rate=25:duration=12" \
 
 cp "$src" "$out/direct.mp4"
 
+# The same video as two files, picture only and sound only, the way some players fetch them.
+ffmpeg -v error -y -i "$src" -an -c copy -movflags +faststart "$out/picture.mp4"
+ffmpeg -v error -y -i "$src" -vn -c copy -movflags +faststart "$out/sound.mp4"
+
+# A shorter clip, to tell apart from the 12 second ones by running time.
+ffmpeg -v error -y -i "$src" -t 5 -c:v libx264 -preset veryfast -b:v 1500k -c:a aac -movflags +faststart "$out/short.mp4"
+
 # HLS, MPEG-TS segments, two variants behind a master playlist.
 ffmpeg -v error -y -i "$src" \
   -filter_complex "[0:v]split=2[v1][v2];[v2]scale=320:180[v2s]" \

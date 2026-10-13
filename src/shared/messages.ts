@@ -7,6 +7,8 @@ export type State = {
 	jobs: Record<string, Job>;
 	/** Outcome of asking yt-dlp about a tab's page, per tab id. */
 	probes: Record<string, Probe>;
+	/** Durations, in seconds, of the media elements playing on each tab when it was last looked at. */
+	playing: Record<string, number[]>;
 };
 
 export type Probe = {
@@ -17,7 +19,7 @@ export type Probe = {
 };
 
 export const STATE_KEY = 'state';
-export const emptyState = (): State => ({ media: {}, jobs: {}, probes: {} });
+export const emptyState = (): State => ({ media: {}, jobs: {}, probes: {}, playing: {} });
 
 /** Sent by the popup to the service worker. */
 export type UiCommand =
@@ -46,7 +48,7 @@ export type EngineCommand =
 	/** Answered with a `Preview`. `id` scopes the header rule exactly as a job id does. */
 	| { to: 'engine'; type: 'preview'; id: string; kind: 'file' | 'hls' | 'dash'; url: string };
 
-export type Preview = { thumbnail?: string; duration?: number };
+export type Preview = { thumbnail?: string; duration?: number; tracks?: 'both' | 'video' | 'audio' };
 
 /** Sent by the offscreen engine to the service worker. */
 export type EngineEvent =

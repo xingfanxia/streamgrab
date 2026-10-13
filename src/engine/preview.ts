@@ -64,6 +64,10 @@ export const makePreview = async (kind: 'file' | 'hls' | 'dash', url: string, fe
 	try {
 		const preview: Preview = {};
 		const video = await smallest(await input.getVideoTracks());
+		const audio = await input.getPrimaryAudioTrack();
+		if (video || audio) {
+			preview.tracks = video && audio ? 'both' : video ? 'video' : 'audio';
+		}
 		const live = video ? await video.isLive() : false;
 		if (kind !== 'dash' && !live) {
 			const duration = await input.computeDuration();

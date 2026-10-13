@@ -135,5 +135,22 @@
 	},
 	"emptyTitle": {
 		"message": "Nothing to grab yet"
+	},
+	"playingNow": {
+		"message": "Playing"
+	},
+	"noSound": {
+		"message": "No sound"
+	},
+	"showOthers": {
+		"message": "Show $N$ more this page has loaded",
+		"placeholders": {
+			"n": {
+				"content": "$1"
+			}
+		}
+	},
+	"hideOthers": {
+		"message": "Show only what is playing"
 	}
 }

@@ -3,6 +3,7 @@ import { arrange, estimateSize } from '../src/core/arrange';
 import { classify } from '../src/core/classify';
 import { summarizeHls } from '../src/core/m3u8';
 import { cleanTitle, sanitizeBasename } from '../src/core/naming';
+import { findPartner } from '../src/core/pairing';
 import type { DetectedMedia } from '../src/core/types';
 import { mergeVtt } from '../src/core/vtt';
 
@@ -101,6 +102,11 @@ describe('arrange', () => {
 		expect(result.hidden).toBe(1);
 	});
 
+	it('puts what is playing first in the default order', () => {
+		expect(arrange(media, { sort: 'newest', minDuration: 0 }, [5400.2]).shown[0]!.key).toBe('film');
+		expect(arrange(media, { sort: 'longest', minDuration: 0 }, [15]).shown[0]!.key).toBe('film');
+	});
+
 	it('orders by duration or size, leaving unknowns last', () => {
 		expect(keys({ sort: 'longest', minDuration: 0 })).toEqual(['film', 'clip', 'ad', 'pending']);
 		expect(keys({ sort: 'largest', minDuration: 0 })).toEqual(['film', 'clip', 'ad', 'pending']);
@@ -137,5 +143,24 @@ describe('site lists', () => {
 		expect(pageUrlForYtDlp('https://www.douyin.com/jingxuan?modal_id=7695696443977387273')).toBe('https://www.douyin.com/video/7695696443977387273');
 		expect(pageUrlForYtDlp('https://www.douyin.com/video/123')).toBe('https://www.douyin.com/video/123');
 		expect(pageUrlForYtDlp('https://example.com/?modal_id=5')).toBe('https://example.com/?modal_id=5');
+	});
+});
+
+describe('findPartner', () => {
+	const file = (key: string, tracks: DetectedMedia['tracks'], duration?: number): DetectedMedia => ({
+		key, kind: 'file', url: `https://a/${key}`, tabId: 1, replayHeaders: {}, variants: [], hasVideo: tracks !== 'audio', detectedAt: 0, tracks, duration,
+	});
+
+	it('pairs picture and sound of the same running time, in either direction', () => {
+		const items = [file('picture', 'video', 424.57), file('sound', 'audio', 424.6), file('short', 'both', 36.5), file('other-sound', 'audio', 36.5)];
+		expect(findPartner(items[0]!, items)?.key).toBe('sound');
+		expect(findPartner(items[1]!, items)?.key).toBe('picture');
+	});
+
+	it('leaves complete files and unmatched tracks alone', () => {
+		const items = [file('whole', 'both', 60), file('sound', 'audio', 60), file('picture', 'video', 90), file('unknown', 'video')];
+		expect(findPartner(items[0]!, items)).toBeUndefined();
+		expect(findPartner(items[1]!, items)).toBeUndefined();
+		expect(findPartner(items[3]!, items)).toBeUndefined();
 	});
 });

@@ -17,7 +17,7 @@ export const isFragmentSite = hostMatches(/(^|\.)(youtube\.com|youtu\.be|bilibil
  * also works to a degree, and its results are shown only when yt-dlp has nothing.
  */
 export const isPageSite = (url: string | undefined): boolean => (
-	isFragmentSite(url) || hostMatches(/(^|\.)(xiaohongshu\.com|xhslink\.com|weibo\.com|instagram\.com|tiktok\.com|douyin\.com)$/)(url)
+	isFragmentSite(url) || hostMatches(/(^|\.)(xiaohongshu\.com|xhslink\.com|weibo\.com|instagram\.com|tiktok\.com)$/)(url)
 );
 
 /**

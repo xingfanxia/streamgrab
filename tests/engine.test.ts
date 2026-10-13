@@ -6,7 +6,7 @@ import { BufferTarget } from 'mediabunny';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { summarizeHls } from '../src/core/m3u8';
 import { summarizeDash } from '../src/core/mpd';
-import { downloadDash, downloadHls, type EngineHooks } from '../src/engine/remux';
+import { downloadDash, downloadHls, downloadPair, type EngineHooks } from '../src/engine/remux';
 import { serveFixtures, type FixtureServer } from './serve';
 
 const FIXTURES = join(import.meta.dirname, '../scratch/data/fixtures');
@@ -94,6 +94,12 @@ describe.skipIf(!existsSync(FIXTURES))('engine against local fixtures', () => {
 		await downloadDash(summary.videos[0]!, summary.audios[0]!, target, run);
 		expectAv(probe('dash.mp4', target.buffer!), 360);
 		expect(run.fractions.at(-1)).toBe(1);
+	});
+
+	it('merges a picture-only file with its sound-only file', async () => {
+		const target = new BufferTarget();
+		await downloadPair(`${server.origin}/picture.mp4`, `${server.origin}/sound.mp4`, target, hooks());
+		expectAv(probe('pair.mp4', target.buffer!), 360);
 	});
 
 	it('finalizes a playable partial file when stopped midway', async () => {

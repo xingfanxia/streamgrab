@@ -27,6 +27,10 @@ export type DetectedMedia = {
 	size?: number;
 	/** A file a script fetched; dropped when a manifest turns up on the same tab, as it is then a stream fragment. */
 	viaScript?: boolean;
+	/** Which tracks a file holds, once it has been looked into. */
+	tracks?: 'both' | 'video' | 'audio';
+	/** For a picture-only file: the separate file that holds its sound, merged in when downloading. */
+	audioUrl?: string;
 	duration?: number;
 	live?: boolean;
 	/** Set when the manifest declares a DRM system; such media is listed but not downloadable. */
@@ -72,6 +76,8 @@ export type JobRequest = {
 	/** Chosen variant, or null for the best available. */
 	variant: Variant | null;
 	audioOnly: boolean;
+	/** A second file holding the sound, for a `file` whose picture and sound are served separately. */
+	audioUrl?: string;
 	live: boolean;
 	/** File name inside OPFS the result is written to. */
 	opfsName: string;

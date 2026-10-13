@@ -6,6 +6,11 @@ export type ListPrefs = {
 	minDuration: number;
 };
 
+/** Whether an item is one of the things playing on the page, judged by running time. */
+export const isPlaying = (media: DetectedMedia, playing: number[]): boolean => (
+	media.duration !== undefined && playing.some(duration => Math.abs(duration - media.duration!) < 0.5)
+);
+
 export const DEFAULT_PREFS: ListPrefs = { sort: 'newest', minDuration: 0 };
 
 /**
@@ -27,14 +32,24 @@ const KIND_ORDER = { page: 0, hls: 1, dash: 1, file: 2 };
 
 /**
  * Applies the user's filter and ordering to a tab's media. An item whose duration is not known yet is never hidden,
- * since it cannot be said to be too short. Items missing the sorted-by value go last.
+ * since it cannot be said to be too short. Items missing the sorted-by value go last. In the default order, what
+ * is playing comes first.
  */
-export const arrange = (media: DetectedMedia[], prefs: ListPrefs): { shown: DetectedMedia[]; hidden: number } => {
+export const arrange = (
+	media: DetectedMedia[],
+	prefs: ListPrefs,
+	playing: number[] = [],
+): { shown: DetectedMedia[]; hidden: number } => {
 	const shown = media.filter(item => (
 		prefs.minDuration === 0 || item.live || item.duration === undefined || item.duration >= prefs.minDuration
 	));
 
-	const newest = (a: DetectedMedia, b: DetectedMedia) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind] || b.detectedAt - a.detectedAt;
+	// What is on screen leads; a feed preloads its next videos, and those are rarely what the user came for.
+	const newest = (a: DetectedMedia, b: DetectedMedia) => (
+		Number(isPlaying(b, playing)) - Number(isPlaying(a, playing))
+		|| KIND_ORDER[a.kind] - KIND_ORDER[b.kind]
+		|| b.detectedAt - a.detectedAt
+	);
 	const by = (value: (item: DetectedMedia) => number | undefined) => (a: DetectedMedia, b: DetectedMedia) => (
 		(value(b) ?? -1) - (value(a) ?? -1) || newest(a, b)
 	);

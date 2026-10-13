@@ -1,4 +1,4 @@
-import { arrange, DEFAULT_PREFS, estimateSize, type ListPrefs } from '../core/arrange';
+import { arrange, DEFAULT_PREFS, estimateSize, isPlaying, type ListPrefs } from '../core/arrange';
 import { cleanTitle } from '../core/naming';
 import { isPageSite } from '../core/sites';
 import type { DetectedMedia, Job, Variant } from '../core/types';
@@ -21,6 +21,9 @@ const durationSelect = byId<HTMLSelectElement>('min-duration');
 
 const PREFS_KEY = 'listPrefs';
 let prefs: ListPrefs = DEFAULT_PREFS;
+
+/** Whether the items that are not playing have been asked for; a feed preloads many the user never looked at. */
+let showOthers = false;
 
 /** Media whose list of other ways to save is open, kept across re-renders. */
 const expanded = new Set<string>();
@@ -112,7 +115,7 @@ const renderOptions = (media: DetectedMedia) => {
 	return rows;
 };
 
-const renderMediaItem = (media: DetectedMedia, tabTitle: string) => {
+const renderMediaItem = (media: DetectedMedia, tabTitle: string, playing: boolean) => {
 	// Network-detected media carries no title of its own, so it takes the tab's current one, as the saved file will.
 	const title = (media.kind === 'page' ? media.pageTitle : cleanTitle(tabTitle) || media.pageTitle) || fileNameOf(media.url);
 
@@ -133,7 +136,8 @@ const renderMediaItem = (media: DetectedMedia, tabTitle: string) => {
 	}
 
 	const best = media.variants[0];
-	const facts = [best && media.hasVideo ? qualityLabel(best) : '', sizeLabel(media, best), media.hasVideo ? '' : t('kindAudio')].filter(Boolean);
+	const silent = media.tracks === 'video' && !media.audioUrl;
+	const facts = [best && media.hasVideo ? qualityLabel(best) : '', sizeLabel(media, best), media.hasVideo ? '' : t('kindAudio'), silent ? t('noSound') : ''].filter(Boolean);
 	const body = el('div', { className: 'body' }, [
 		el('div', { className: 'title', textContent: title, title }),
 		el('div', { className: 'facts' }, facts.map((fact, index) => el('span', { textContent: fact, testid: index === 1 || facts.length === 1 ? 'size' : '' }))),
@@ -141,6 +145,13 @@ const renderMediaItem = (media: DetectedMedia, tabTitle: string) => {
 
 	const item = el('li', { className: 'item', testid: 'media-item' }, [shot, body]);
 	item.dataset.kind = media.kind;
+	if (media.audioUrl) {
+		item.dataset.paired = '';
+	}
+	if (playing) {
+		item.classList.add('playing');
+		shot.append(el('span', { className: 'now', textContent: t('playingNow'), testid: 'playing' }));
+	}
 
 	if (media.drm) {
 		body.append(el('p', { className: 'blocked', textContent: t('blocked', media.drm), testid: 'blocked' }));
@@ -268,14 +279,32 @@ const render = (state: State, tab: chrome.tabs.Tab) => {
 	// Where yt-dlp has answered for a site it knows, its result stands in for the plain files found there.
 	const answered = isPageSite(tab.url) && current.some(item => item.kind === 'page');
 	const all = answered ? current.filter(item => item.kind !== 'file') : current;
-	const { shown: media, hidden } = arrange(all, prefs);
+	const playing = state.playing[tabId] ?? [];
+	const { shown: media, hidden } = arrange(all, prefs, playing);
 	const jobs = Object.values(state.jobs).sort((a, b) => b.startedAt - a.startedAt);
 
 	// The list is only rebuilt when it changes, so progress updates never disturb an open set of options.
-	const signature = media.map(item => `${item.key}|${item.thumbnail ? 1 : 0}|${item.duration ?? ''}`).join() + tab.title + prefs.sort + prefs.minDuration;
+	const signature = media.map(item => `${item.key}|${item.thumbnail ? 1 : 0}|${item.duration ?? ''}|${item.tracks ?? ''}|${item.audioUrl ? 1 : 0}`).join() + tab.title + prefs.sort + prefs.minDuration + playing.join();
 	if (signature !== renderedMedia) {
 		renderedMedia = signature;
-		mediaList.replaceChildren(...media.map(item => renderMediaItem(item, tab.title ?? '')));
+		// When it is known what is on screen, the rest (usually a feed's preloaded videos) waits behind a toggle.
+		const current = media.filter(item => isPlaying(item, playing));
+		const others = media.filter(item => !current.includes(item));
+		const fold = current.length > 0 && others.length > 0;
+		const visible = fold && !showOthers ? current : media;
+		mediaList.replaceChildren(...visible.map(item => renderMediaItem(item, tab.title ?? '', fold && current.includes(item))));
+		if (fold) {
+			mediaList.append(el('li', { className: 'fold' }, [el('button', {
+				className: 'quiet',
+				textContent: showOthers ? t('hideOthers') : t('showOthers', String(others.length)),
+				testid: 'others',
+				onclick: () => {
+					showOthers = !showOthers;
+					renderedMedia = '';
+					render(state, tab);
+				},
+			})]));
+		}
 		if (all.some(item => !item.previewed)) {
 			void send({ type: 'preview', tabId });
 		}
@@ -357,6 +386,7 @@ const main = async () => {
 	});
 
 	void send({ type: 'scan', tabId });
+	setInterval(() => void send({ type: 'scan', tabId }), 3000);
 	// On sites yt-dlp is known to handle, the page is checked straight away.
 	if (isPageSite(tab.url)) {
 		void send({ type: 'probe', tabId });

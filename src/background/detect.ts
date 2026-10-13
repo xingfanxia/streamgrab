@@ -198,12 +198,20 @@ export const scanPage = async (tabId: number) => {
 			url: element.currentSrc || element.src || element.querySelector('source')?.src || '',
 			video: element instanceof HTMLVideoElement,
 			duration: Number.isFinite(element.duration) ? element.duration : undefined,
+			playing: !element.paused && !element.ended,
 			page: location.href,
 		})),
 	}).catch(() => []);
 
+	const elements = results.flatMap(frame => frame.result ?? []);
+	// Players that feed the element through a blob hide its address, but the running time still identifies which
+	// of the detected files is the one on screen.
+	await mutate(state => {
+		state.playing[tabId] = elements.flatMap(element => (element.playing && element.duration ? [element.duration] : []));
+	});
+
 	const tab = await chrome.tabs.get(tabId).catch(() => null);
-	for (const element of results.flatMap(frame => frame.result ?? [])) {
+	for (const element of elements) {
 		if (!/^https?:/.test(element.url)) {
 			continue;
 		}
@@ -232,6 +240,7 @@ export const forgetTab = async (tabId: number) => {
 	await mutate(state => {
 		delete state.media[tabId];
 		delete state.probes[tabId];
+		delete state.playing[tabId];
 	});
 	await updateBadge(tabId);
 };

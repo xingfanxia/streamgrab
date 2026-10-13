@@ -135,5 +135,22 @@
 	},
 	"emptyTitle": {
 		"message": "还没有可保存的内容"
+	},
+	"playingNow": {
+		"message": "正在播放"
+	},
+	"noSound": {
+		"message": "无声音"
+	},
+	"showOthers": {
+		"message": "显示此页面加载的另外 $N$ 个",
+		"placeholders": {
+			"n": {
+				"content": "$1"
+			}
+		}
+	},
+	"hideOthers": {
+		"message": "只显示正在播放的"
 	}
 }

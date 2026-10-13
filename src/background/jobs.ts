@@ -83,6 +83,9 @@ const finish = async (jobId: string, patch: Partial<Job>) => {
 };
 
 const extensionFor = (media: DetectedMedia, audioOnly: boolean) => {
+	if (media.kind === 'file' && media.audioUrl) {
+		return 'mp4';
+	}
 	if (media.kind === 'file') {
 		return media.ext ?? 'mp4';
 	}
@@ -131,6 +134,7 @@ export const startDownload = async (command: Extract<UiCommand, { type: 'downloa
 		url: subtitle?.url ?? media.url,
 		variant: media.variants.find(variant => variant.id === command.variantId) ?? null,
 		audioOnly,
+		audioUrl: subtitle ? undefined : media.audioUrl,
 		live: media.live ?? false,
 		opfsName: `${jobId}.${ext}`,
 	};

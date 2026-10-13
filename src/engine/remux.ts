@@ -1,4 +1,5 @@
 import {
+	ALL_FORMATS,
 	Conversion,
 	HLS_FORMATS,
 	Input,
@@ -120,6 +121,26 @@ export const downloadHls = async (request: HlsRequest, target: Target, hooks: En
 		await remux([{ input, video, audio }], target, hooks, !request.live);
 	} finally {
 		input.dispose();
+	}
+};
+
+/** Merges a picture-only file and a sound-only file into one MP4. */
+export const downloadPair = async (videoUrl: string, audioUrl: string, target: Target, hooks: EngineHooks) => {
+	const open = (url: string) => new Input({
+		source: new UrlSource(url, { fetchFn: hooks.fetchFn, getRetryDelay: attempts => (attempts < 5 ? 0.5 * (attempts + 1) : null) }),
+		formats: ALL_FORMATS,
+	});
+	const inputs = [open(videoUrl), open(audioUrl)];
+
+	try {
+		await remux([
+			{ input: inputs[0]!, video: await inputs[0]!.getPrimaryVideoTrack(), audio: null },
+			{ input: inputs[1]!, video: null, audio: await inputs[1]!.getPrimaryAudioTrack() },
+		], target, hooks, true);
+	} finally {
+		for (const input of inputs) {
+			input.dispose();
+		}
 	}
 };
 

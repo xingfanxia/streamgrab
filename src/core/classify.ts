@@ -34,8 +34,11 @@ const TYPE_EXTENSIONS: Record<string, string> = {
 	'audio/flac': 'flac',
 };
 
-/** Smallest direct file worth listing; anything below is almost always a UI sound, preview or ad stub. */
-export const MIN_FILE_SIZE = 500_000;
+/**
+ * Smallest direct file worth listing; anything below is almost always a UI sound or an ad stub. The bar is low
+ * because the sound of a short video, when it is served as a file of its own, is only a hundred kilobytes or so.
+ */
+export const MIN_FILE_SIZE = 50_000;
 
 export const extensionOf = (url: string): string | undefined => {
 	try {

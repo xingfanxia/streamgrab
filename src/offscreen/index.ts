@@ -6,7 +6,7 @@ import type { JobRequest } from '../core/types';
 import { fetchOk, withRetry } from '../engine/fetching';
 import { downloadFile } from '../engine/file';
 import { makePreview } from '../engine/preview';
-import { downloadDash, downloadHls, type EngineHooks } from '../engine/remux';
+import { downloadDash, downloadHls, downloadPair, type EngineHooks } from '../engine/remux';
 import { isEngineCommand, type EngineEvent, type Preview } from '../shared/messages';
 
 type Running = {
@@ -43,7 +43,7 @@ const execute = async (
 	let position = 0;
 
 	try {
-		if (request.kind === 'file') {
+		if (request.kind === 'file' && !request.audioUrl) {
 			await downloadFile(request.url, async chunk => {
 				await writable.write(chunk);
 				noteBytes(position += chunk.byteLength);
@@ -76,6 +76,11 @@ const execute = async (
 			close: () => writable.close(),
 			abort: reason => writable.abort(reason),
 		}));
+
+		if (request.kind === 'file') {
+			await downloadPair(request.url, request.audioUrl!, target, hooks);
+			return;
+		}
 
 		if (request.kind === 'hls') {
 			await downloadHls({
