@@ -6,6 +6,7 @@ import type { JobRequest } from '../core/types';
 import { fetchOk, withRetry } from '../engine/fetching';
 import { downloadFile } from '../engine/file';
 import { makePreview } from '../engine/preview';
+import { createTurns } from '../engine/turns';
 import { downloadDash, downloadHls, downloadPair, type EngineHooks } from '../engine/remux';
 import { isEngineCommand, type EngineEvent, type Preview } from '../shared/messages';
 
@@ -18,6 +19,9 @@ type Running = {
 };
 
 const running = new Map<string, Running>();
+
+/** Jobs wait their turn per server. */
+const takeTurn = createTurns();
 
 const send = (event: EngineEvent) => chrome.runtime.sendMessage(event);
 
@@ -123,7 +127,12 @@ const run = async (request: JobRequest) => {
 	};
 
 	const root = await navigator.storage.getDirectory();
+	const endTurn = await takeTurn(new URL(request.url).host);
 	try {
+		if (job.stop.signal.aborted) {
+			throw new DOMException('Canceled', 'AbortError');
+		}
+		await send({ from: 'engine', type: 'started', jobId: request.jobId });
 		const file = await root.getFileHandle(request.opfsName, { create: true });
 		const hooks: EngineHooks = {
 			fetchFn: makeFetch(request.jobId),
@@ -141,9 +150,11 @@ const run = async (request: JobRequest) => {
 		if (!job.keep || bytes === 0) {
 			throw new DOMException('Canceled', 'AbortError');
 		}
+		endTurn();
 		job.blobUrl = URL.createObjectURL(await file.getFile());
 		await send({ from: 'engine', type: 'done', jobId: request.jobId, blobUrl: job.blobUrl, bytes });
 	} catch (error) {
+		endTurn();
 		await root.removeEntry(request.opfsName).catch(() => {});
 		running.delete(request.jobId);
 		if (job.stop.signal.aborted) {

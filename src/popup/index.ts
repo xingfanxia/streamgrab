@@ -201,7 +201,7 @@ const jobStatus = (job: Job) => {
 	if (job.state === 'done') {
 		return formatBytes(job.bytes);
 	}
-	return t({ saving: 'stateSaving', canceled: 'stateCanceled', queued: 'stateRunning' }[job.state]);
+	return t({ saving: 'stateSaving', canceled: 'stateCanceled', queued: 'stateQueued' }[job.state]);
 };
 
 const renderRunning = (job: Job) => {
@@ -217,7 +217,7 @@ const renderRunning = (job: Job) => {
 		el('span', { className: 'title', textContent: job.filename, title: job.filename }),
 		el('span', { className: 'status', textContent: jobStatus(job), testid: 'job-status' }),
 	]);
-	if (job.state === 'running') {
+	if (job.state === 'running' || job.state === 'queued') {
 		line.append(el('button', {
 			className: 'quiet',
 			textContent: t(live ? 'stopAndSave' : 'cancel'),

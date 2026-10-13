@@ -9,6 +9,8 @@ export type Variant = {
 	height?: number;
 	bitrate?: number;
 	codecs?: string;
+	/** The manifest this quality comes from, when an item gathers several manifests of one video. */
+	url?: string;
 };
 
 /** One thing the user can download, as detected on a tab. */

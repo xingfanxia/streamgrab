@@ -51,12 +51,20 @@ export type EngineCommand =
 	/** Answered with a `Preview`. `id` scopes the header rule exactly as a job id does. */
 	| { to: 'engine'; type: 'preview'; id: string; kind: 'file' | 'hls' | 'dash'; url: string };
 
-export type Preview = { thumbnail?: string; duration?: number; tracks?: 'both' | 'video' | 'audio' };
+export type Preview = {
+	thumbnail?: string;
+	duration?: number;
+	tracks?: 'both' | 'video' | 'audio';
+	/** Picture height of the stream that was looked at. */
+	height?: number;
+};
 
 /** Sent by the offscreen engine to the service worker. */
 export type EngineEvent =
 	/** Asks for the job's replayed headers to also apply to this host; answered once the rule is in place. */
 	| { from: 'engine'; type: 'host'; jobId: string; host: string }
+	/** The job has reached the front of its server's queue and begun transferring. */
+	| { from: 'engine'; type: 'started'; jobId: string }
 	| { from: 'engine'; type: 'progress'; jobId: string; progress: number | null; bytes: number }
 	| { from: 'engine'; type: 'done'; jobId: string; blobUrl: string; bytes: number }
 	| { from: 'engine'; type: 'canceled'; jobId: string }

@@ -155,5 +155,8 @@
 	},
 	"onScreen": {
 		"message": "On screen"
+	},
+	"stateQueued": {
+		"message": "Waiting for its turn"
 	}
 }

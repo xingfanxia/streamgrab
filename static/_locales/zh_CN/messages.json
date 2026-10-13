@@ -155,5 +155,8 @@
 	},
 	"onScreen": {
 		"message": "当前视频"
+	},
+	"stateQueued": {
+		"message": "排队等待中"
 	}
 }

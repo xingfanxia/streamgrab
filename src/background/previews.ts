@@ -4,8 +4,30 @@ import type { Preview } from '../shared/messages';
 import { dropRule, ensureEngine, holdEngine, openRule, sendToEngine } from './jobs';
 import { loadState, mutate } from './state';
 
-/** How many items are looked into at once. */
-const CONCURRENCY = 4;
+/** Orders qualities best first and numbers them, since ids are only meaningful within one item. */
+const sortQualities = (variants: DetectedMedia['variants']) => [...variants]
+	.sort((a, b) => (b.height ?? 0) - (a.height ?? 0) || (b.bitrate ?? 0) - (a.bitrate ?? 0))
+	.map((variant, index) => ({ ...variant, id: String(index) }));
+
+/** Folds `from` into `into`: every quality either offers, each remembering the manifest it comes from. */
+const mergeManifests = (into: DetectedMedia, from: DetectedMedia) => {
+	const tagged = (media: DetectedMedia) => media.variants.map(variant => ({ ...variant, url: variant.url ?? media.url }));
+	const byHeight = new Map<number | string, DetectedMedia['variants'][number]>();
+	for (const variant of [...tagged(into), ...tagged(from)]) {
+		const key = variant.height ?? `${variant.url}#${variant.id}`;
+		if (!byHeight.has(key) || (variant.bitrate ?? 0) > (byHeight.get(key)!.bitrate ?? 0)) {
+			byHeight.set(key, variant);
+		}
+	}
+	into.variants = sortQualities([...byHeight.values()]);
+	into.subtitles = [...(into.subtitles ?? []), ...(from.subtitles ?? [])]
+		.filter((track, index, all) => all.findIndex(entry => entry.label === track.label) === index);
+	into.thumbnail ??= from.thumbnail;
+	into.childUrls = [...(into.childUrls ?? []), ...(from.childUrls ?? []), from.url];
+};
+
+/** How many items are looked into at once. Kept low: media servers often cap connections per visitor. */
+const CONCURRENCY = 2;
 
 const previewOne = async (tabId: number, media: DetectedMedia & { kind: 'file' | 'hls' | 'dash' }) => {
 	const id = `preview-${crypto.randomUUID()}`;
@@ -20,6 +42,12 @@ const previewOne = async (tabId: number, media: DetectedMedia & { kind: 'file' |
 			item.thumbnail = preview.thumbnail;
 			item.duration ??= preview.duration;
 			item.tracks = preview.tracks;
+			// A playlist for a single quality does not state its picture size; the stream does.
+			// It may already hold qualities gathered from other playlists, so only its own is checked for.
+			const ownQuality = item.variants.some(variant => !variant.url || variant.url === item.url);
+			if (!ownQuality && preview.height && item.kind !== 'file') {
+				item.variants = sortQualities([...item.variants, { id: '', height: preview.height, url: item.url }]);
+			}
 			if (preview.tracks === 'audio') {
 				item.hasVideo = false;
 			}
@@ -40,25 +68,33 @@ const previewOne = async (tabId: number, media: DetectedMedia & { kind: 'file' |
 				return;
 			}
 
-			// Two manifests on one host with exactly the same running time are one video offered twice,
-			// for instance with and without subtitles. The fuller one is kept.
-			const richness = (entry: typeof item) => entry.variants.length + (entry.subtitles?.length ?? 0) * 10;
+			// Two manifests on one host with exactly the same running time are one video offered twice: with and
+			// without subtitles, or once per quality. They become one item that offers every quality.
+			// Renditions of one video differ in length by a frame or two of padding, so playlists of different
+			// qualities are matched more loosely than ones that could be two videos of the same quality.
+			const heightsOf = (media: DetectedMedia) => media.variants.flatMap(variant => variant.height ?? []);
 			for (const other of Object.values(current.media[tabId]!)) {
-				const twin = other !== item
-					&& other.kind === item.kind
-					&& item.duration !== undefined
-					&& other.duration !== undefined
-					&& Math.abs(other.duration - item.duration) < 0.05
-					&& new URL(other.url).host === new URL(item.url).host;
+				if (other === item || other.kind !== item.kind || (item.kind !== 'hls' && item.kind !== 'dash')) {
+					continue;
+				}
+				if (item.duration === undefined || other.duration === undefined || new URL(other.url).host !== new URL(item.url).host) {
+					continue;
+				}
+				const apart = Math.abs(other.duration - item.duration);
+				const differentQualities = heightsOf(item).length > 0
+					&& heightsOf(other).length > 0
+					&& !heightsOf(item).some(height => heightsOf(other).includes(height));
+				const twin = apart < 0.05 || (differentQualities && apart < 0.5);
 				if (twin) {
-					delete current.media[tabId]![richness(other) >= richness(item) ? item.key : other.key];
+					mergeManifests(other, item);
+					delete current.media[tabId]![item.key];
 					break;
 				}
 			}
 		});
-				} finally {
+	} finally {
 		await dropRule(id);
-				}
+	}
 };
 
 /**

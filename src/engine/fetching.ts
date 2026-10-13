@@ -1,6 +1,7 @@
 import type { Part } from '../core/mpd';
 
-const MAX_ATTEMPTS = 5;
+/** Attempts in a row that may fail without getting anywhere before giving up. */
+const MAX_ATTEMPTS = 6;
 
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -14,16 +15,24 @@ const isPermanent = (error: unknown) => (
 	error instanceof HttpError && error.status >= 400 && error.status < 500 && error.status !== 408 && error.status !== 429
 );
 
-/** Runs `attempt` until it succeeds, backing off linearly. Client errors and aborts are not retried. */
-export const withRetry = async <T>(attempt: () => Promise<T>, signal?: AbortSignal): Promise<T> => {
+/**
+ * Runs `attempt` until it succeeds, backing off a little longer each time. Client errors and aborts are not
+ * retried. `progress`, when given, reports how far the work has got: a failed attempt that still moved forward does
+ * not count against the limit, so a connection that keeps dropping but keeps delivering is never given up on.
+ */
+export const withRetry = async <T>(attempt: () => Promise<T>, signal?: AbortSignal, progress?: () => number): Promise<T> => {
 	for (let tries = 1; ; tries++) {
+		const before = progress?.();
 		try {
 			return await attempt();
 		} catch (error) {
+			if (progress && progress() !== before) {
+				tries = 0;
+			}
 			if (signal?.aborted || isPermanent(error) || tries >= MAX_ATTEMPTS) {
 				throw error;
 			}
-			await sleep(500 * tries);
+			await sleep(Math.min(8000, 700 * 2 ** Math.max(0, tries - 1)));
 		}
 	}
 };

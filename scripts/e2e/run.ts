@@ -325,6 +325,34 @@ try {
 		await page.close();
 	}
 
+	// A site that offers each quality as its own playlist: one item, the qualities inside it. Two downloads from
+	// the same server take turns rather than running together.
+	{
+		writeFileSync(join(fixtures, 'qualities.html'), `<!doctype html><title>One video, two playlists</title>
+			<script>fetch('/hls/v0.m3u8'); fetch('/hls/v1.m3u8')</script>`);
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/qualities.html`);
+		const popup = await openPopup(page);
+		const items = popup.getByTestId('media-item');
+		await popup.waitForFunction(() => document.querySelectorAll('[data-testid="quality"]').length === 2, null, { timeout: 30_000 }).catch(() => {});
+		const heights = await popup.getByTestId('quality').evaluateAll(rows => rows.map(row => (row as HTMLElement).dataset.height).join());
+		check(await items.count() === 1 && heights === '360,180', `per-quality playlists: one item offering ${heights}`);
+
+		await popup.getByTestId('more').click();
+		await popup.locator('[data-testid="quality"][data-height="180"]').click();
+		await popup.getByTestId('download').click();
+		const waiting = await popup.locator('[data-testid="job"][data-state="queued"]').waitFor({ timeout: 5000 }).then(() => true, () => false);
+		await popup.waitForFunction(() => document.querySelectorAll('[data-testid="finished-list"] [data-state="done"]').length === 2, null, { timeout: 90_000 }).catch(() => {});
+		const done = await popup.locator('[data-testid="finished-list"] [data-state="done"]').count();
+		check(done === 2, `same-server downloads: both finished${waiting ? ', the second after waiting its turn' : ''} (${done} of 2)`);
+		const saved = readdirSync(downloads).map(name => join(downloads, name)).sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs).slice(0, 2);
+		const savedHeights = saved.map(file => JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-select_streams', 'v', '-show_entries', 'stream=height', '-of', 'json', file]).toString()).streams[0].height).sort().join();
+		check(savedHeights === '180,360', `per-quality playlists: each download came from its own playlist (${savedHeights})`);
+		await popup.getByTestId('clear-finished').click();
+		await popup.close();
+		await page.close();
+	}
+
 	// A page handed to yt-dlp through the native bridge: found on request, downloaded by yt-dlp itself.
 	{
 		writeFileSync(join(fixtures, 'bridge.html'), '<!doctype html><title>Bridge fixture</title><video src="/direct.mp4" controls></video>');

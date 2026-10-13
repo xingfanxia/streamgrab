@@ -64,6 +64,6 @@ export const downloadFile = async (
 				// No stated size: a ranged answer shorter than asked for is the tail, and a plain one ends when it ends.
 				finished = !ranged || received - from < CHUNK;
 			}
-		}, hooks.stopSignal);
+		}, hooks.stopSignal, () => received);
 	}
 };

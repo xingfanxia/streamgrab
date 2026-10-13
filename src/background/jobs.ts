@@ -135,18 +135,20 @@ export const startDownload = async (command: Extract<UiCommand, { type: 'downloa
 			tabId: media.tabId,
 			title,
 			filename: `${basename}.${ext}`,
-			state: 'running',
+			state: 'queued',
 			progress: media.live && !subtitle ? null : 0,
 			bytes: 0,
 			startedAt: Date.now(),
 		};
 	});
 
+	const variant = media.variants.find(entry => entry.id === command.variantId) ?? media.variants[0] ?? null;
 	const request: JobRequest = {
 		jobId,
 		kind: subtitle ? 'subtitles' : kind,
-		url: subtitle?.url ?? media.url,
-		variant: media.variants.find(variant => variant.id === command.variantId) ?? null,
+		// An item gathered from several manifests downloads from the one that holds the chosen quality.
+		url: subtitle?.url ?? variant?.url ?? media.url,
+		variant,
 		audioOnly,
 		audioUrl: subtitle ? undefined : media.audioUrl,
 		live: media.live ?? false,
@@ -187,6 +189,16 @@ export const onEngineEvent = async (event: EngineEvent) => {
 			if (rule && !rule.hosts.includes(event.host)) {
 				rule.hosts.push(event.host);
 				await setHeaderRule(rule.ruleId, rule.headers, rule.hosts);
+			}
+		});
+		return;
+	}
+
+	if (event.type === 'started') {
+		await mutate(state => {
+			const job = state.jobs[event.jobId];
+			if (job?.state === 'queued') {
+				job.state = 'running';
 			}
 		});
 		return;

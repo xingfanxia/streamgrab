@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { arrange, estimateSize } from '../src/core/arrange';
+import { createTurns } from '../src/engine/turns';
 import { classify } from '../src/core/classify';
 import { summarizeHls } from '../src/core/m3u8';
 import { cleanTitle, sanitizeBasename } from '../src/core/naming';
@@ -162,5 +163,22 @@ describe('findPartner', () => {
 		expect(findPartner(items[0]!, items)).toBeUndefined();
 		expect(findPartner(items[1]!, items)).toBeUndefined();
 		expect(findPartner(items[3]!, items)).toBeUndefined();
+	});
+});
+
+describe('createTurns', () => {
+	it('runs holders of one key one at a time and in order, and different keys together', async () => {
+		const takeTurn = createTurns();
+		const log: string[] = [];
+		const job = async (key: string, name: string, ms: number) => {
+			const end = await takeTurn(key);
+			log.push(`${name} start`);
+			await new Promise(resolve => setTimeout(resolve, ms));
+			log.push(`${name} end`);
+			end();
+		};
+		await Promise.all([job('a.example', 'first', 30), job('a.example', 'second', 5), job('b.example', 'other', 10)]);
+		expect(log.indexOf('first end')).toBeLessThan(log.indexOf('second start'));
+		expect(log.indexOf('other start')).toBeLessThan(log.indexOf('first end'));
 	});
 });
