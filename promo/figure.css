@@ -1,0 +1,16 @@
+/* What the bench adds to the kit's styles: the viewer's screen and the flat runs of film. */
+.iso { --sg-glass: #0c0b11; }
+.iso[data-theme="light"] { --sg-glass: #2a2a2e; }
+.sg-recess { fill: var(--anatomy-shade-0); stroke: var(--anatomy-lo); stroke-width: 0.6; vector-effect: non-scaling-stroke; }
+.sg-glass { fill: var(--sg-glass); }
+.sg-bezel { fill: none; stroke: var(--anatomy-lit); stroke-width: 0.9; vector-effect: non-scaling-stroke; }
+/* Colour is the subject here: the picture on the screen is a set of test bars, as on the product's own fixtures. */
+.sg-bar[data-bar="0"] { fill: #f1f0f5; }
+.sg-bar[data-bar="1"] { fill: #f7c531; }
+.sg-bar[data-bar="2"] { fill: #45cfd6; }
+.sg-bar[data-bar="3"] { fill: #4fc46a; }
+.sg-bar[data-bar="4"] { fill: #d65ac9; }
+.sg-bar[data-bar="5"] { fill: #e5484d; }
+.sg-bar[data-bar="6"] { fill: #4a6cf7; }
+.iso-stage { outline: none; }
+.iso-stage:focus-visible { outline: 1px solid var(--anatomy-muted); outline-offset: 6px; }
