@@ -1,7 +1,7 @@
 // End-to-end check: loads the built extension into Chromium, lets it detect the local fixtures on a page, downloads
 // each through the popup UI and verifies the saved files with ffprobe. Run via `npm run e2e`.
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { chromium, type Page } from 'playwright';
@@ -353,26 +353,31 @@ try {
 		await page.close();
 	}
 
-	// Three slow downloads from one server: two run, the third waits and can be cancelled at once.
+	// Six slow downloads from one server: five run, the sixth waits and can be cancelled at once.
 	{
-		writeFileSync(join(fixtures, 'three.html'), `<!doctype html><title>Three slow ones</title>
-			${['direct', 'picture', 'short'].map(name => `<video src="/slow/${name}.mp4" preload="none"></video>`).join('')}`);
+		const names = ['a', 'b', 'c', 'd', 'e', 'f'].map(letter => `clip-${letter}.mp4`);
+		for (const name of names) {
+			cpSync(join(fixtures, 'short.mp4'), join(fixtures, name));
+		}
+		writeFileSync(join(fixtures, 'six.html'), `<!doctype html><title>Six slow ones</title>
+			${names.map(name => `<video src="/slow/${name}" preload="none"></video>`).join('')}`);
 		const page = await context.newPage();
-		await page.goto(`${server.origin}/three.html`);
+		await page.goto(`${server.origin}/six.html`);
 		const popup = await openPopup(page);
 		const buttons = popup.getByTestId('download');
-		await buttons.nth(2).waitFor({ timeout: 20_000 });
-		for (let index = 0; index < 3; index++) {
+		await buttons.nth(5).waitFor({ timeout: 20_000 });
+		for (let index = 0; index < 6; index++) {
 			await buttons.nth(index).click();
 		}
 		const queued = popup.locator('[data-testid="job"][data-state="queued"]');
-		await popup.waitForFunction(() => document.querySelectorAll('[data-testid="job"][data-state="running"]').length === 2 && document.querySelectorAll('[data-testid="job"][data-state="queued"]').length === 1, null, { timeout: 15_000 }).catch(() => {});
-		check(await queued.count() === 1 && await popup.locator('[data-testid="job"][data-state="running"]').count() === 2, 'slow server: two transfers run and the third waits its turn');
+		const counts = () => popup.evaluate(() => ['running', 'queued', 'canceled'].map(state => document.querySelectorAll(`[data-testid="job"][data-state="${state}"]`).length).join('/'));
+		await popup.waitForFunction(() => document.querySelectorAll('[data-testid="job"][data-state="running"]').length === 5 && document.querySelectorAll('[data-testid="job"][data-state="queued"]').length === 1, null, { timeout: 15_000 }).catch(() => {});
+		check(await counts() === '5/1/0', `slow server: five transfers run and the sixth waits its turn (${await counts()} running/waiting/cancelled)`);
 		await queued.getByTestId('stop').click();
-		const cancelled = await popup.locator('[data-testid="job"][data-state="canceled"]').waitFor({ timeout: 3000 }).then(() => true, () => false);
-		check(cancelled && await popup.locator('[data-testid="job"][data-state="running"]').count() === 2, 'slow server: the waiting one is cancelled at once, the others carry on');
-		await popup.waitForFunction(() => document.querySelectorAll('[data-testid="finished-list"] [data-state="done"]').length === 2, null, { timeout: 60_000 }).catch(() => {});
-		check(await popup.locator('[data-testid="finished-list"] [data-state="done"]').count() === 2, 'slow server: both running transfers finish');
+		await popup.locator('[data-testid="job"][data-state="canceled"]').waitFor({ timeout: 3000 }).catch(() => {});
+		check(await counts() === '5/0/1', `slow server: the waiting one is cancelled at once, the others carry on (${await counts()})`);
+		await popup.waitForFunction(() => document.querySelectorAll('[data-testid="finished-list"] [data-state="done"]').length === 5, null, { timeout: 90_000 }).catch(() => {});
+		check(await popup.locator('[data-testid="finished-list"] [data-state="done"]').count() === 5, 'slow server: all five running transfers finish');
 		await popup.getByTestId('clear-finished').click();
 		await popup.close();
 		await page.close();

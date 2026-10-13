@@ -3,13 +3,13 @@
  * media servers commonly cap the connections a visitor may hold, the page's own player already holds one, and too
  * many transfers at once get some of them cut off.
  */
-export const createTurns = (defaultLimit: number) => {
+export const createTurns = (defaultLimit: number, learned: Record<string, number> = {}) => {
 	type Line = { limit: number; active: number; waiting: { start: () => void; cancelled: boolean }[] };
 	const lines = new Map<string, Line>();
 	const lineFor = (key: string) => {
 		let line = lines.get(key);
 		if (!line) {
-			lines.set(key, line = { limit: defaultLimit, active: 0, waiting: [] });
+			lines.set(key, line = { limit: learned[key] ?? defaultLimit, active: 0, waiting: [] });
 		}
 		return line;
 	};
@@ -47,6 +47,7 @@ export const createTurns = (defaultLimit: number) => {
 		}),
 		/** How many turns are in progress for a key. */
 		active: (key: string) => lineFor(key).active,
+		limitOf: (key: string) => lineFor(key).limit,
 		/** Changes how many may run at once for a key from now on; turns in progress are left to finish. */
 		setLimit: (key: string, limit: number) => {
 			const line = lineFor(key);

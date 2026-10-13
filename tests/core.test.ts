@@ -204,6 +204,12 @@ describe('createTurns', () => {
 		expect(log).toEqual(['one start', 'two gave up', 'one end', 'three start', 'three end']);
 	});
 
+	it('starts from a limit learned earlier for a key', () => {
+		const turns = createTurns(5, { crowded: 1 });
+		expect(turns.limitOf('crowded')).toBe(1);
+		expect(turns.limitOf('fresh')).toBe(5);
+	});
+
 	it('applies a lowered limit to those still waiting', async () => {
 		const { turns, log, job } = scenario(2);
 		const all = Promise.all([job('a', 'one', 20), job('a', 'two', 40), job('a', 'three', 5), job('a', 'four', 5)]);

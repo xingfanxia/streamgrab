@@ -20,16 +20,37 @@ type Running = {
 
 const running = new Map<string, Running>();
 
-/**
- * Jobs wait their turn per server, two at a time. A server that turns out to cut connections when two run is
- * lowered to one for the rest of the session.
- */
-const turns = createTurns(2);
+/** Transfers allowed at once from a server that has given no reason for fewer. */
+const DEFAULT_PER_SERVER = 5;
+/** Times a transfer may be cut off, with others running beside it, before the server is taken to be crowded. */
+const CUTS_BEFORE_BACKING_OFF = 3;
+const LEARNED_KEY = 'serverLimits';
+const LEARNED_FOR_MS = 7 * 24 * 60 * 60 * 1000;
 
-/** Whether an error is the connection breaking or the server holding back, as opposed to a refusal. */
-const isConnectionTrouble = (error: unknown) => (
-	error instanceof TypeError || (error instanceof Error && /network|bytes and stopped|Failed to fetch/i.test(error.message))
+/**
+ * Limits learned for servers that cut connections, kept for a week. This document is closed whenever nothing is
+ * downloading, so without keeping them every session would have to find the limit out again.
+ */
+const readLearned = (): Record<string, { limit: number; at: number }> => {
+	try {
+		const stored = JSON.parse(localStorage.getItem(LEARNED_KEY) ?? '{}') as Record<string, { limit: number; at: number }>;
+		return Object.fromEntries(Object.entries(stored).filter(([, entry]) => Date.now() - entry.at < LEARNED_FOR_MS));
+	} catch {
+		return {};
+	}
+};
+
+const turns = createTurns(
+	DEFAULT_PER_SERVER,
+	Object.fromEntries(Object.entries(readLearned()).map(([host, entry]) => [host, entry.limit])),
 );
+
+/** Lowers a server's limit to one fewer than are running now, and remembers it. */
+const backOff = (host: string) => {
+	const limit = Math.max(1, Math.min(turns.limitOf(host), turns.active(host)) - 1);
+	turns.setLimit(host, limit);
+	localStorage.setItem(LEARNED_KEY, JSON.stringify({ ...readLearned(), [host]: { limit, at: Date.now() } }));
+};
 
 const send = (event: EngineEvent) => chrome.runtime.sendMessage(event);
 
@@ -51,7 +72,7 @@ const MAX_NOTES = 60;
  * The fetch every job uses: asks for the job's header rule to cover each new host, sends cookies, and keeps a short
  * record of what came back so a failure can be diagnosed from the user's own browser.
  */
-const makeFetch = (jobId: string, notes: RequestNote[] = []): typeof fetch => {
+const makeFetch = (jobId: string, notes: RequestNote[] = [], onCut: () => void = () => {}): typeof fetch => {
 	const knownHosts = new Set<string>();
 	const started = Date.now();
 	return async (input, init) => {
@@ -77,6 +98,9 @@ const makeFetch = (jobId: string, notes: RequestNote[] = []): typeof fetch => {
 			response = await fetch(input, { ...init, credentials: 'include' });
 		} catch (error) {
 			note.error = `request: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`;
+			if (!init?.signal?.aborted) {
+				onCut();
+			}
 			throw error;
 		}
 		note.status = response.status;
@@ -102,6 +126,9 @@ const makeFetch = (jobId: string, notes: RequestNote[] = []): typeof fetch => {
 					}
 				} catch (error) {
 					note.error = `body: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`;
+					if (!init?.signal?.aborted) {
+						onCut();
+					}
 					controller.error(error);
 				}
 			},
@@ -208,13 +235,22 @@ const run = async (request: JobRequest) => {
 	let endTurn = () => {};
 	try {
 		let file: FileSystemFileHandle;
-		for (let round = 0; ; round++) {
+		for (;;) {
 			endTurn = await turns.take(host, job.stop.signal);
 			await send({ from: 'engine', type: 'started', jobId: request.jobId });
 			file = await root.getFileHandle(request.opfsName, { create: true });
+
+			// A transfer that keeps getting cut off while others from the same server run beside it is taken as
+			// the sign that the server allows fewer at once: it stops, the limit drops, and it waits its turn.
+			const crowded = new AbortController();
+			let cuts = 0;
 			const hooks: EngineHooks = {
-				fetchFn: makeFetch(request.jobId, notes),
-				stopSignal: job.stop.signal,
+				fetchFn: makeFetch(request.jobId, notes, () => {
+					if (++cuts >= CUTS_BEFORE_BACKING_OFF && turns.active(host) > 1) {
+						crowded.abort();
+					}
+				}),
+				stopSignal: AbortSignal.any([job.stop.signal, crowded.signal]),
 				onProgress: fraction => {
 					progress = fraction;
 					report();
@@ -225,22 +261,22 @@ const run = async (request: JobRequest) => {
 					bytes = Math.max(bytes, end);
 					report();
 				});
-				break;
+				if (!crowded.signal.aborted) {
+					break;
+				}
 			} catch (error) {
-				// A connection cut while another transfer from the same server was running most likely means the
-				// server allows fewer at once. The job goes back in line, alone this time, instead of failing.
-				const crowded = turns.active(host) > 1;
-				endTurn();
-				endTurn = () => {};
-				if (job.stop.signal.aborted || round > 0 || !crowded || !isConnectionTrouble(error)) {
+				if (job.stop.signal.aborted || !crowded.signal.aborted) {
 					throw error;
 				}
-				turns.setLimit(host, 1);
-				await root.removeEntry(request.opfsName).catch(() => {});
-				bytes = 0;
-				progress = 0;
-				await send({ from: 'engine', type: 'waiting', jobId: request.jobId });
 			}
+
+			backOff(host);
+			endTurn();
+			endTurn = () => {};
+			await root.removeEntry(request.opfsName).catch(() => {});
+			bytes = 0;
+			progress = 0;
+			await send({ from: 'engine', type: 'waiting', jobId: request.jobId });
 		}
 
 		if (!job.keep || bytes === 0) {
