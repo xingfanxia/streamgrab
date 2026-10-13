@@ -7,7 +7,8 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 export class HttpError extends Error {
 	constructor(readonly status: number, url: string) {
-		super(`HTTP ${status} for ${url}`);
+		// The query string is left out: it usually carries a signed token, and errors get shown and copied.
+		super(`HTTP ${status} for ${url.split('?')[0]}`);
 	}
 }
 

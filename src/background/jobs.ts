@@ -240,7 +240,9 @@ export const onEngineEvent = async (event: EngineEvent) => {
 		return;
 	}
 
-	await finish(event.jobId, event.type === 'canceled' ? { state: 'canceled' } : { state: 'failed', error: event.error });
+	await finish(event.jobId, event.type === 'canceled'
+		? { state: 'canceled' }
+		: { state: 'failed', error: event.error, details: `streamgrab ${chrome.runtime.getManifest().version}\n${event.details}` });
 	await closeEngineIfIdle();
 };
 

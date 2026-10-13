@@ -353,6 +353,26 @@ try {
 		await page.close();
 	}
 
+	// A failed download says why in full and offers the record of its requests, with no query strings in it.
+	{
+		writeFileSync(join(fixtures, 'vanishing.html'), '<!doctype html><title>Vanishing</title><video src="/gone.mp4?token=secret123" preload="none"></video>');
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/vanishing.html`);
+		const popup = await openPopup(page);
+		await popup.getByTestId('download').click({ timeout: 15_000 });
+		await popup.getByTestId('job-error').waitFor({ timeout: 30_000 });
+		const reason = await popup.getByTestId('job-error').textContent();
+		const details: string = await worker.evaluate(async () => {
+			const state = (await chrome.storage.session.get('state')).state as { jobs: Record<string, { details?: string }> };
+			return Object.values(state.jobs).map(job => job.details).find(Boolean) ?? '';
+		});
+		const parsed = JSON.parse(details.slice(details.indexOf('{')) || '{}') as { requests?: { status?: number }[] };
+		check(Boolean(reason?.includes('404')) && parsed.requests?.[0]?.status === 404 && !details.includes('secret123'), `failed download: reason shown in full (${reason}), details recorded without the query string`);
+		await popup.getByTestId('clear').first().click();
+		await popup.close();
+		await page.close();
+	}
+
 	// A page handed to yt-dlp through the native bridge: found on request, downloaded by yt-dlp itself.
 	{
 		writeFileSync(join(fixtures, 'bridge.html'), '<!doctype html><title>Bridge fixture</title><video src="/direct.mp4" controls></video>');

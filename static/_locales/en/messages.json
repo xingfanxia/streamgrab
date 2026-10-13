@@ -158,5 +158,14 @@
 	},
 	"stateQueued": {
 		"message": "Waiting for its turn"
+	},
+	"stateFailedShort": {
+		"message": "Failed"
+	},
+	"copyDetails": {
+		"message": "Copy details"
+	},
+	"copied": {
+		"message": "Copied"
 	}
 }

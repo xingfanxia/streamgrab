@@ -68,7 +68,7 @@ export type EngineEvent =
 	| { from: 'engine'; type: 'progress'; jobId: string; progress: number | null; bytes: number }
 	| { from: 'engine'; type: 'done'; jobId: string; blobUrl: string; bytes: number }
 	| { from: 'engine'; type: 'canceled'; jobId: string }
-	| { from: 'engine'; type: 'failed'; jobId: string; error: string };
+	| { from: 'engine'; type: 'failed'; jobId: string; error: string; details: string };
 
 export const isEngineCommand = (message: unknown): message is EngineCommand => (
 	typeof message === 'object' && message !== null && (message as { to?: unknown }).to === 'engine'

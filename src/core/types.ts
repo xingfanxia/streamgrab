@@ -67,6 +67,8 @@ export type Job = {
 	progress: number | null;
 	bytes: number;
 	error?: string;
+	/** For a failed job: what each request to the server returned, as text the user can copy out. */
+	details?: string;
 	/** Id of the browser download that holds the finished file, once it has been handed over. */
 	downloadId?: number;
 	startedAt: number;

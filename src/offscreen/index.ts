@@ -25,15 +25,83 @@ const takeTurn = createTurns();
 
 const send = (event: EngineEvent) => chrome.runtime.sendMessage(event);
 
-const makeFetch = (jobId: string): typeof fetch => {
+/** One request as it went: enough to see how a server behaved, without cookies or signed query strings. */
+type RequestNote = {
+	at: number;
+	url: string;
+	range?: string;
+	status?: number;
+	headers?: Record<string, string>;
+	bytes: number;
+	error?: string;
+};
+
+const NOTED_HEADERS = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'server', 'retry-after'];
+const MAX_NOTES = 60;
+
+/**
+ * The fetch every job uses: asks for the job's header rule to cover each new host, sends cookies, and keeps a short
+ * record of what came back so a failure can be diagnosed from the user's own browser.
+ */
+const makeFetch = (jobId: string, notes: RequestNote[] = []): typeof fetch => {
 	const knownHosts = new Set<string>();
+	const started = Date.now();
 	return async (input, init) => {
 		const url = new URL(input instanceof Request ? input.url : input);
 		if (url.protocol.startsWith('http') && !knownHosts.has(url.host)) {
 			await send({ from: 'engine', type: 'host', jobId, host: url.host });
 			knownHosts.add(url.host);
 		}
-		return fetch(input, { ...init, credentials: 'include' });
+
+		const note: RequestNote = {
+			at: Date.now() - started,
+			url: `${url.host}${url.pathname.replace(/[^/]{24,}/g, part => `${part.slice(0, 8)}…${part.slice(-8)}`)}`,
+			range: new Headers(init?.headers).get('range') ?? undefined,
+			bytes: 0,
+		};
+		notes.push(note);
+		if (notes.length > MAX_NOTES) {
+			notes.splice(4, notes.length - MAX_NOTES);
+		}
+
+		let response: Response;
+		try {
+			response = await fetch(input, { ...init, credentials: 'include' });
+		} catch (error) {
+			note.error = `request: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`;
+			throw error;
+		}
+		note.status = response.status;
+		note.headers = Object.fromEntries(NOTED_HEADERS.flatMap(name => {
+			const value = response.headers.get(name);
+			return value ? [[name, value]] : [];
+		}));
+		if (!response.body) {
+			return response;
+		}
+
+		// The body is passed through unchanged; counting it shows how far a transfer got before it broke.
+		const reader = response.body.getReader();
+		const counted = new ReadableStream<Uint8Array>({
+			async pull(controller) {
+				try {
+					const { done, value } = await reader.read();
+					if (done) {
+						controller.close();
+					} else {
+						note.bytes += value.byteLength;
+						controller.enqueue(value);
+					}
+				} catch (error) {
+					note.error = `body: ${error instanceof Error ? `${error.name}: ${error.message}` : String(error)}`;
+					controller.error(error);
+				}
+			},
+			cancel: reason => reader.cancel(reason),
+		});
+		const wrapped = new Response(counted, { status: response.status, statusText: response.statusText, headers: response.headers });
+		Object.defineProperty(wrapped, 'url', { value: response.url });
+		return wrapped;
 	};
 };
 
@@ -115,6 +183,7 @@ const run = async (request: JobRequest) => {
 	const job: Running = { stop: new AbortController(), keep: true, opfsName: request.opfsName };
 	running.set(request.jobId, job);
 
+	const notes: RequestNote[] = [];
 	let bytes = 0;
 	let progress: number | null = null;
 	let lastSent = 0;
@@ -135,7 +204,7 @@ const run = async (request: JobRequest) => {
 		await send({ from: 'engine', type: 'started', jobId: request.jobId });
 		const file = await root.getFileHandle(request.opfsName, { create: true });
 		const hooks: EngineHooks = {
-			fetchFn: makeFetch(request.jobId),
+			fetchFn: makeFetch(request.jobId, notes),
 			stopSignal: job.stop.signal,
 			onProgress: fraction => {
 				progress = fraction;
@@ -163,7 +232,15 @@ const run = async (request: JobRequest) => {
 			console.error(error);
 			// Browsers report a broken connection only as "network error"; naming the server makes it actionable.
 			const reason = error instanceof Error ? error.message : String(error);
-			await send({ from: 'engine', type: 'failed', jobId: request.jobId, error: `${reason} (${new URL(request.url).host})` });
+			const details = JSON.stringify({
+				kind: request.kind,
+				paired: Boolean(request.audioUrl),
+				error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+				bytesWritten: bytes,
+				online: navigator.onLine,
+				requests: notes,
+			}, null, 1);
+			await send({ from: 'engine', type: 'failed', jobId: request.jobId, error: `${reason} (${new URL(request.url).host})`, details });
 		}
 	}
 };

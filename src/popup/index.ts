@@ -236,8 +236,21 @@ const renderFinished = (job: Job) => {
 	const item = el('li', { testid: 'job' }, [
 		el('span', { className: 'mark' }),
 		el('span', { className: 'title', textContent: job.filename, title: job.filename }),
-		el('span', { className: 'status', textContent: jobStatus(job), title: job.error ?? '', testid: 'job-status' }),
+		el('span', { className: 'status', textContent: job.state === 'failed' ? t('stateFailedShort') : jobStatus(job), testid: 'job-status' }),
 	]);
+	if (job.state === 'failed') {
+		// The reason gets a line of its own: it is the one thing worth reading on a failed download.
+		const reason = el('div', { className: 'reason' }, [el('span', { textContent: job.error ?? '', testid: 'job-error' })]);
+		if (job.details) {
+			const copy = el('button', { className: 'quiet', textContent: t('copyDetails'), testid: 'copy-details' });
+			copy.addEventListener('click', async () => {
+				await navigator.clipboard.writeText(job.details!);
+				copy.textContent = t('copied');
+			});
+			reason.append(copy);
+		}
+		item.append(reason);
+	}
 	if (job.state === 'done' && job.downloadId !== undefined) {
 		item.append(el('button', { className: 'quiet', textContent: t('showFile'), testid: 'show', onclick: () => send({ type: 'reveal', jobId: job.id }) }));
 	}
