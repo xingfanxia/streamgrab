@@ -118,7 +118,10 @@ const renderMediaItem = (media: DetectedMedia, tabTitle: string) => {
 
 	const shot = el('div', { className: 'shot' });
 	if (media.thumbnail) {
-		shot.append(el('img', { src: media.thumbnail, alt: '', testid: 'thumbnail' }));
+		// Remote covers are requested without a referrer, which image hosts that guard against embedding accept.
+		const image = el('img', { src: media.thumbnail, alt: '', referrerPolicy: 'no-referrer', testid: 'thumbnail' });
+		image.addEventListener('error', () => image.remove());
+		shot.append(image);
 	} else if (!media.hasVideo) {
 		shot.classList.add('audio');
 	}

@@ -18,6 +18,7 @@ type HostInfo = {
 	heights: number[];
 	hasVideo: boolean;
 	thumbnail?: string;
+	bitrates?: Record<string, number>;
 	subtitles: { language: string; automatic: boolean }[];
 };
 type HostMessage =
@@ -90,7 +91,15 @@ export const probePage = async (tabId: number) => {
 		return;
 	}
 
-	const variants: Variant[] = reply.heights.map(height => ({ id: String(height), height }));
+	const variants: Variant[] = reply.heights.map(height => ({ id: String(height), height, bitrate: reply.bitrates?.[height] }));
+
+	// When yt-dlp reports no cover, the page usually names one itself.
+	const cover = reply.thumbnail ?? await chrome.scripting.executeScript({
+		target: { tabId },
+		func: () => document.querySelector<HTMLMetaElement>('meta[property="og:image"], meta[name="og:image"]')?.content
+			|| document.querySelector<HTMLVideoElement>('video[poster]')?.poster
+			|| '',
+	}).then(results => results[0]?.result || undefined, () => undefined);
 	const media: DetectedMedia = {
 		key: `page-${hashString(url)}`,
 		kind: 'page',
@@ -104,7 +113,7 @@ export const probePage = async (tabId: number) => {
 		live: reply.live,
 		variants,
 		hasVideo: reply.hasVideo,
-		thumbnail: reply.thumbnail,
+		thumbnail: cover?.replace(/^http:/, 'https:'),
 		previewed: true,
 		subtitles: reply.subtitles.map(({ language, automatic }) => ({
 			label: automatic ? `${language} (auto)` : language,

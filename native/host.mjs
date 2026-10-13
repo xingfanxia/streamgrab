@@ -107,7 +107,25 @@ const probe = async request => {
 
 	const info = JSON.parse(json);
 	const formats = info.formats ?? [];
-	const heights = [...new Set(formats.filter(format => format.vcodec && format.vcodec !== 'none' && format.height).map(format => format.height))];
+	const videos = formats.filter(format => format.vcodec && format.vcodec !== 'none' && format.height);
+	const heights = [...new Set(videos.map(format => format.height))];
+	// Bitrate per height (best video at that height, plus the best separate audio when the video has none), which
+	// lets the extension estimate a size before anything is downloaded.
+	// Some sites give a bitrate, others only a file size; either yields kilobits per second.
+	const rateOf = format => format.tbr
+		|| (info.duration ? ((format.filesize || format.filesize_approx || 0) * 8) / info.duration / 1000 : 0);
+	const audioRate = Math.max(0, ...formats.filter(format => format.vcodec === 'none' && format.acodec !== 'none').map(rateOf));
+	const bitrates = {};
+	for (const height of heights) {
+		const best = videos.filter(format => format.height === height).sort((a, b) => rateOf(b) - rateOf(a))[0];
+		if (rateOf(best)) {
+			bitrates[height] = Math.round((rateOf(best) + (best.acodec === 'none' ? audioRate : 0)) * 1000);
+		}
+	}
+
+	// Sites report the cover image in different places, and some still give an http address.
+	const cover = [info.thumbnail, ...(info.thumbnails ?? []).map(entry => entry.url).reverse()]
+		.find(url => typeof url === 'string' && /^https?:\/\//.test(url));
 	const manual = Object.keys(info.subtitles ?? {}).filter(language => language !== 'live_chat' && language !== 'danmaku');
 	const automatic = Object.keys(info.automatic_captions ?? {})
 		.filter(language => (AUTO_CAPTION_LANGUAGES.test(language) || language.endsWith('-orig')) && !manual.includes(language));
@@ -118,7 +136,8 @@ const probe = async request => {
 		title: info.title ?? '',
 		site: info.extractor_key ?? '',
 		duration: typeof info.duration === 'number' ? info.duration : undefined,
-		thumbnail: typeof info.thumbnail === 'string' && info.thumbnail.startsWith('https://') ? info.thumbnail : undefined,
+		thumbnail: cover?.replace(/^http:/, 'https:'),
+		bitrates,
 		live: Boolean(info.is_live),
 		heights: heights.sort((a, b) => b - a),
 		hasVideo: heights.length > 0,
