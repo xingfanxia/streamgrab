@@ -151,6 +151,9 @@
 		}
 	},
 	"hideOthers": {
-		"message": "Show only what is playing"
+		"message": "Show only the one on screen"
+	},
+	"onScreen": {
+		"message": "On screen"
 	}
 }

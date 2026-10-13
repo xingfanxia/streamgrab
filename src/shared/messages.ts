@@ -7,8 +7,11 @@ export type State = {
 	jobs: Record<string, Job>;
 	/** Outcome of asking yt-dlp about a tab's page, per tab id. */
 	probes: Record<string, Probe>;
-	/** Durations, in seconds, of the media elements playing on each tab when it was last looked at. */
-	playing: Record<string, number[]>;
+	/**
+	 * The media elements in view on each tab when it was last looked at, by running time. An element counts when
+	 * it is visible and has been started, whether or not it is paused right now.
+	 */
+	onScreen: Record<string, { duration: number; playing: boolean }[]>;
 };
 
 export type Probe = {
@@ -19,7 +22,7 @@ export type Probe = {
 };
 
 export const STATE_KEY = 'state';
-export const emptyState = (): State => ({ media: {}, jobs: {}, probes: {}, playing: {} });
+export const emptyState = (): State => ({ media: {}, jobs: {}, probes: {}, onScreen: {} });
 
 /** Sent by the popup to the service worker. */
 export type UiCommand =

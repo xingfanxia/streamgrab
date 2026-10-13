@@ -273,6 +273,10 @@ try {
 		check(await items.count() === 1 && await items.first().getAttribute('data-kind') === 'file', `feed: only the playing video is shown (${await items.count()} item)`);
 		await popup.getByTestId('others').click();
 		check(await items.count() === 3 && await popup.getByTestId('playing').count() === 1, 'feed: the others appear on request, the playing one marked');
+		await popup.getByTestId('others').click();
+		await page.evaluate(() => document.querySelector('video')!.pause());
+		await popup.getByTestId('playing').filter({ hasText: 'On screen' }).waitFor({ timeout: 10_000 }).catch(() => {});
+		check(await items.count() === 1 && await popup.getByTestId('playing').textContent() === 'On screen', 'feed: a paused video is still the current one');
 		await popup.screenshot({ path: join(shots, 'popup-feed.png') });
 		await popup.close();
 		await page.close();
@@ -282,7 +286,7 @@ try {
 	{
 		writeFileSync(join(fixtures, 'overlay.html'), `<!doctype html><title>Someone's profile</title>
 			<style>.player { position: relative; width: 640px; height: 360px } video { width: 100%; height: 100% } .info { position: absolute; left: 8px; bottom: 8px; color: white }</style>
-			<div class="player"><video src="/short.mp4" muted autoplay loop></video>
+			<div class="player"><div><video src="/short.mp4" muted autoplay loop></video><div class="info" style="top: 8px; bottom: auto">Resumed at 16:59</div></div>
 				<div class="info"><div>@someone</div><div>3 days ago</div><div>Episode 12: why the machine never stops</div><div>A much longer line of description text that carries on well past the headline above it.</div></div>
 				<div class="bullet">short</div></div>
 			<p>An unrelated and considerably longer paragraph elsewhere on the page, such as a comment, which must not be mistaken for the title of the video that is playing.</p>`);
@@ -298,6 +302,25 @@ try {
 		const name = await popup.locator('[data-testid="finished-list"] .title').first().textContent();
 		check(name === 'Episode 12 why the machine never stops.mp4', `overlay title: used for the saved file (${name})`);
 		await popup.getByTestId('clear').first().click();
+		await popup.close();
+		await page.close();
+	}
+
+	// Several items needing the Referer are looked into at the same time; each must still get its header.
+	{
+		writeFileSync(join(fixtures, 'guarded.html'), `<!doctype html><title>Guarded</title>
+			<script>for (const path of ['hls/master.m3u8', 'hls-aes/index.m3u8', 'dash/manifest.mpd', 'hls-fmp4/master.m3u8']) fetch('/protected/' + path)</script>
+			<video src="/protected/short.mp4" muted autoplay loop></video>`);
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/guarded.html`);
+		const popup = await openPopup(page);
+		await popup.getByTestId('others').click({ timeout: 30_000 }).catch(() => {});
+		// The three HLS playlists are the same 12 second video and merge into one, leaving HLS, DASH and the file.
+		await popup.waitForFunction(() => (
+			document.querySelectorAll('[data-testid="media-item"]').length === 3 && document.querySelectorAll('[data-testid="thumbnail"]').length === 3
+		), null, { timeout: 30_000 }).catch(() => {});
+		const [listed, shown] = [await popup.getByTestId('media-item').count(), await popup.getByTestId('thumbnail').count()];
+		check(listed === 3 && shown === 3, `guarded items: looked into at the same time, each with the Referer replayed (${shown} thumbnails for ${listed} items)`);
 		await popup.close();
 		await page.close();
 	}

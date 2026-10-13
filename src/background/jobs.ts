@@ -16,6 +16,22 @@ const readMap = async <T>(key: string): Promise<Record<string, T>> => (
 );
 const writeMap = (key: string, value: Record<string, unknown>) => chrome.storage.session.set({ [key]: value });
 
+/**
+ * Runs a read-change-write of the rule map on its own turn. Several downloads and previews update the map at the
+ * same time, and without taking turns one update would overwrite another.
+ */
+let rulesTurn: Promise<unknown> = Promise.resolve();
+const withRules = <T>(change: (rules: Record<string, JobRule>) => Promise<T> | T): Promise<T> => {
+	const turn = rulesTurn.then(async () => {
+		const rules = await readMap<JobRule>(RULES_KEY);
+		const result = await change(rules);
+		await writeMap(RULES_KEY, rules);
+		return result;
+	});
+	rulesTurn = turn.catch(() => {});
+	return turn;
+};
+
 let engineReady: Promise<void> | null = null;
 /** Work other than jobs (previews) that needs the engine document kept open. */
 let engineHolds = 0;
@@ -57,20 +73,18 @@ const closeEngineIfIdle = async () => {
 
 /** Starts replaying `headers` for the requests the engine makes under `id`; hosts are added as it meets them. */
 export const openRule = async (id: string, headers: Record<string, string>) => {
-	const rules = await readMap<JobRule>(RULES_KEY);
-	rules[id] = { ruleId: newRuleId(), headers, hosts: [] };
-	await writeMap(RULES_KEY, rules);
+	await withRules(rules => {
+		rules[id] = { ruleId: newRuleId(), headers, hosts: [] };
+	});
 };
 
-export const dropRule = async (jobId: string) => {
-	const rules = await readMap<JobRule>(RULES_KEY);
+export const dropRule = (jobId: string) => withRules(async rules => {
 	const rule = rules[jobId];
 	if (rule) {
 		await removeHeaderRule(rule.ruleId);
 		delete rules[jobId];
-		await writeMap(RULES_KEY, rules);
 	}
-};
+});
 
 const finish = async (jobId: string, patch: Partial<Job>) => {
 	await mutate(state => {
@@ -168,13 +182,13 @@ export const clearFinished = () => mutate(state => {
 /** Handles an engine event; the returned promise settles when the engine may proceed. */
 export const onEngineEvent = async (event: EngineEvent) => {
 	if (event.type === 'host') {
-		const rules = await readMap<JobRule>(RULES_KEY);
-		const rule = rules[event.jobId];
-		if (rule && !rule.hosts.includes(event.host)) {
-			rule.hosts.push(event.host);
-			await writeMap(RULES_KEY, rules);
-			await setHeaderRule(rule.ruleId, rule.headers, rule.hosts);
-		}
+		await withRules(async rules => {
+			const rule = rules[event.jobId];
+			if (rule && !rule.hosts.includes(event.host)) {
+				rule.hosts.push(event.host);
+				await setHeaderRule(rule.ruleId, rule.headers, rule.hosts);
+			}
+		});
 		return;
 	}
 
@@ -251,7 +265,11 @@ export const reconcileJobs = async () => {
 			}
 		}
 	});
-	await writeMap(RULES_KEY, {});
+	await withRules(rules => {
+		for (const id of Object.keys(rules)) {
+			delete rules[id];
+		}
+	});
 	const root = await navigator.storage.getDirectory();
 	for await (const name of (root as unknown as { keys: () => AsyncIterable<string> }).keys()) {
 		await root.removeEntry(name).catch(() => {});

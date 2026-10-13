@@ -115,7 +115,7 @@ const renderOptions = (media: DetectedMedia) => {
 	return rows;
 };
 
-const renderMediaItem = (media: DetectedMedia, tabTitle: string, playing: boolean) => {
+const renderMediaItem = (media: DetectedMedia, tabTitle: string, mark: 'playing' | 'paused' | null) => {
 	// Network-detected media carries no title of its own, so it takes the tab's current one, as the saved file will.
 	const title = media.title || (media.kind === 'page' ? media.pageTitle : cleanTitle(tabTitle) || media.pageTitle) || fileNameOf(media.url);
 
@@ -148,9 +148,9 @@ const renderMediaItem = (media: DetectedMedia, tabTitle: string, playing: boolea
 	if (media.audioUrl) {
 		item.dataset.paired = '';
 	}
-	if (playing) {
+	if (mark) {
 		item.classList.add('playing');
-		shot.append(el('span', { className: 'now', textContent: t('playingNow'), testid: 'playing' }));
+		shot.append(el('span', { className: 'now', textContent: t(mark === 'playing' ? 'playingNow' : 'onScreen'), testid: 'playing' }));
 	}
 
 	if (media.drm) {
@@ -279,12 +279,13 @@ const render = (state: State, tab: chrome.tabs.Tab) => {
 	// Where yt-dlp has answered for a site it knows, its result stands in for the plain files found there.
 	const answered = isPageSite(tab.url) && current.some(item => item.kind === 'page');
 	const all = answered ? current.filter(item => item.kind !== 'file') : current;
-	const playing = state.playing[tabId] ?? [];
+	const onScreen = state.onScreen[tabId] ?? [];
+	const playing = onScreen.map(element => element.duration);
 	const { shown: media, hidden } = arrange(all, prefs, playing);
 	const jobs = Object.values(state.jobs).sort((a, b) => b.startedAt - a.startedAt);
 
 	// The list is only rebuilt when it changes, so progress updates never disturb an open set of options.
-	const signature = media.map(item => `${item.key}|${item.thumbnail ? 1 : 0}|${item.duration ?? ''}|${item.tracks ?? ''}|${item.audioUrl ? 1 : 0}|${item.title ?? ''}`).join() + tab.title + prefs.sort + prefs.minDuration + playing.join();
+	const signature = media.map(item => `${item.key}|${item.thumbnail ? 1 : 0}|${item.duration ?? ''}|${item.tracks ?? ''}|${item.audioUrl ? 1 : 0}|${item.title ?? ''}`).join() + tab.title + prefs.sort + prefs.minDuration + JSON.stringify(onScreen);
 	if (signature !== renderedMedia) {
 		renderedMedia = signature;
 		// When it is known what is on screen, the rest (usually a feed's preloaded videos) waits behind a toggle.
@@ -292,7 +293,14 @@ const render = (state: State, tab: chrome.tabs.Tab) => {
 		const others = media.filter(item => !current.includes(item));
 		const fold = current.length > 0 && others.length > 0;
 		const visible = fold && !showOthers ? current : media;
-		mediaList.replaceChildren(...visible.map(item => renderMediaItem(item, tab.title ?? '', fold && current.includes(item))));
+		const markFor = (item: DetectedMedia) => {
+			if (!fold || !current.includes(item)) {
+				return null;
+			}
+			const element = onScreen.find(entry => Math.abs(entry.duration - (item.duration ?? -1)) < 0.5);
+			return element?.playing ? 'playing' : 'paused';
+		};
+		mediaList.replaceChildren(...visible.map(item => renderMediaItem(item, tab.title ?? '', markFor(item))));
 		if (fold) {
 			mediaList.append(el('li', { className: 'fold' }, [el('button', {
 				className: 'quiet',
@@ -386,7 +394,7 @@ const main = async () => {
 	});
 
 	void send({ type: 'scan', tabId });
-	setInterval(() => void send({ type: 'scan', tabId }), 3000);
+	setInterval(() => void send({ type: 'scan', tabId }), 1500);
 	// On sites yt-dlp is known to handle, the page is checked straight away.
 	if (isPageSite(tab.url)) {
 		void send({ type: 'probe', tabId });

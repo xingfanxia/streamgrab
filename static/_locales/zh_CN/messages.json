@@ -151,6 +151,9 @@
 		}
 	},
 	"hideOthers": {
-		"message": "只显示正在播放的"
+		"message": "只显示当前视频"
+	},
+	"onScreen": {
+		"message": "当前视频"
 	}
 }

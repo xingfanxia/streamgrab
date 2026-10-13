@@ -5,6 +5,7 @@ import { hashString } from '../core/naming';
 import { isFragmentSite } from '../core/sites';
 import type { DetectedMedia } from '../core/types';
 import { fetchWithHeaders, pickReplayHeaders } from './headers';
+import { previewTab } from './previews';
 import { mutate } from './state';
 
 /** Request headers by request id, held between `onSendHeaders` and `onResponseStarted`. */
@@ -117,6 +118,13 @@ const register = async (media: DetectedMedia) => {
 		tab[media.key] = media;
 	});
 	await updateBadge(media.tabId);
+
+	// Thumbnails and running times are read straight away for the tab in front, so the list is complete, and can
+	// be filtered, the moment the popup opens.
+	const tab = await chrome.tabs.get(media.tabId).catch(() => null);
+	if (tab?.active) {
+		void previewTab(media.tabId);
+	}
 };
 
 export const updateBadge = async (tabId: number) => {
@@ -208,9 +216,12 @@ const readMediaElements = () => {
 			if (rect.width * rect.height > area * 1.5) {
 				break;
 			}
+			// Status messages over the picture ("resumed at 16:59", a counter) are short or carry a clock time; a
+			// description is a proper sentence. Only the latter is taken, from the nearest container that has one.
+			const isProse = (line: string, minimum: number) => line.length >= minimum && !/\d{1,2}:\d{2}/.test(line) && !line.startsWith('@');
 			const lines = node.innerText.split('\n').map(line => line.trim());
-			const longest = lines.reduce((best, line) => (line.length > best.length ? line : best), '');
-			if (longest.length < 8) {
+			const longest = lines.filter(line => isProse(line, 16)).reduce((best, line) => (line.length > best.length ? line : best), '');
+			if (!longest) {
 				continue;
 			}
 
@@ -218,7 +229,7 @@ const readMediaElements = () => {
 			// the first of the run of text lines that the longest one belongs to.
 			// Short lines before it (an author's handle, a date) are not part of the description.
 			let first = lines.indexOf(longest);
-			while (first > 0 && lines[first - 1]!.length >= 12 && !lines[first - 1]!.startsWith('@')) {
+			while (first > 0 && isProse(lines[first - 1]!, 12)) {
 				first--;
 			}
 			const title = lines[first]!;
@@ -227,17 +238,25 @@ const readMediaElements = () => {
 		return '';
 	};
 
+	const inView = (element: Element) => {
+		const box = element.getBoundingClientRect();
+		return box.width >= 160 && box.height >= 90 && box.bottom > 0 && box.right > 0 && box.top < innerHeight && box.left < innerWidth;
+	};
+
 	const elements = [...document.querySelectorAll<HTMLMediaElement>('video, audio')];
 	const playingCount = elements.filter(element => !element.paused && !element.ended).length;
 	return elements.map(element => {
 		const playing = !element.paused && !element.ended;
+		// The video the user is looking at stays the current one when paused; preloaded ones were never started.
+		const current = playing || (element.currentTime > 0 && inView(element));
 		return {
 			url: element.currentSrc || element.src || element.querySelector('source')?.src || '',
 			video: element instanceof HTMLVideoElement,
 			duration: Number.isFinite(element.duration) ? element.duration : undefined,
 			playing,
+			current,
 			// What the page declares as now playing is only attributable when a single element is playing.
-			title: playing ? (playingCount === 1 && sessionTitle) || overlayTitle(element) : '',
+			title: current ? (playing && playingCount === 1 && sessionTitle) || overlayTitle(element) : '',
 			page: location.href,
 		};
 	});
@@ -254,7 +273,9 @@ export const scanPage = async (tabId: number) => {
 	// Players that feed the element through a blob hide its address, but the running time still identifies which
 	// of the detected files is the one on screen.
 	await mutate(state => {
-		state.playing[tabId] = elements.flatMap(element => (element.playing && element.duration ? [element.duration] : []));
+		state.onScreen[tabId] = elements.flatMap(element => (
+			element.current && element.duration ? [{ duration: element.duration, playing: element.playing }] : []
+		));
 		// A title belongs to the item with the running time of the element it was read beside.
 		for (const element of elements) {
 			if (!element.title || !element.duration) {
@@ -298,7 +319,7 @@ export const forgetTab = async (tabId: number) => {
 	await mutate(state => {
 		delete state.media[tabId];
 		delete state.probes[tabId];
-		delete state.playing[tabId];
+		delete state.onScreen[tabId];
 	});
 	await updateBadge(tabId);
 };
