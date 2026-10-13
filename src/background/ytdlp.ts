@@ -1,4 +1,5 @@
 import { hashString } from '../core/naming';
+import { pageUrlForYtDlp } from '../core/sites';
 import type { DetectedMedia, Variant } from '../core/types';
 import type { Probe, UiCommand } from '../shared/messages';
 import { loadState, mutate } from './state';
@@ -81,7 +82,7 @@ export const probePage = async (tabId: number) => {
 	}
 
 	await setProbe(tabId, { url, status: 'running' });
-	const reply = await call({ op: 'probe', url, cookies: await cookiesFor(url) }, () => {});
+	const reply = await call({ op: 'probe', url: pageUrlForYtDlp(url), cookies: await cookiesFor(url) }, () => {});
 	if (reply.type !== 'info') {
 		await setProbe(tabId, {
 			url,
@@ -149,7 +150,7 @@ export const startPageDownload = async (media: DetectedMedia, command: Extract<U
 	const [mode, language] = subtitle?.url.split(':') ?? [];
 	const reply = await call({
 		op: 'download',
-		url: media.url,
+		url: pageUrlForYtDlp(media.url),
 		height: command.variantId ? Number(command.variantId) : null,
 		audioOnly: command.audioOnly,
 		subtitle: subtitle ? { language, automatic: mode === 'auto' } : null,

@@ -131,4 +131,11 @@ describe('site lists', () => {
 		expect(isPageSite('https://notyoutube.com.example.org/')).toBe(false);
 		expect(isPageSite(undefined)).toBe(false);
 	});
+
+	it('turns a feed address with a video overlay into the video address', async () => {
+		const { pageUrlForYtDlp } = await import('../src/core/sites');
+		expect(pageUrlForYtDlp('https://www.douyin.com/jingxuan?modal_id=7695696443977387273')).toBe('https://www.douyin.com/video/7695696443977387273');
+		expect(pageUrlForYtDlp('https://www.douyin.com/video/123')).toBe('https://www.douyin.com/video/123');
+		expect(pageUrlForYtDlp('https://example.com/?modal_id=5')).toBe('https://example.com/?modal_id=5');
+	});
 });
