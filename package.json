@@ -1,0 +1,29 @@
+{
+  "name": "streamgrab",
+  "version": "1.0.0",
+  "description": "Chrome extension that saves direct media files and HLS/DASH streams",
+  "scripts": {
+    "test": "vitest run",
+    "build": "node scripts/build.mjs",
+    "dev": "node scripts/build.mjs --watch",
+    "typecheck": "tsc",
+    "fixtures": "scripts/e2e/make-fixtures.sh scratch/data/fixtures",
+    "e2e": "npm run build && tsx scripts/e2e/run.ts"
+  },
+  "license": "MIT",
+  "type": "module",
+  "devDependencies": {
+    "@types/chrome": "^0.3.5",
+    "@types/node": "^26.6.5",
+    "esbuild": "^0.28.2",
+    "playwright": "^1.64.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.4"
+  },
+  "dependencies": {
+    "mediabunny": "^1.61.4",
+    "mpd-parser": "^1.4.0"
+  },
+  "private": true
+}

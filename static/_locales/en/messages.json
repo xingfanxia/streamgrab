@@ -1,0 +1,86 @@
+{
+	"extName": {
+		"message": "streamgrab"
+	},
+	"extDescription": {
+		"message": "Saves the video or audio playing on the current page: direct files, HLS and DASH streams."
+	},
+	"empty": {
+		"message": "Nothing to grab yet. Start playing the video and it will show up here."
+	},
+	"kindHls": {
+		"message": "HLS stream"
+	},
+	"kindDash": {
+		"message": "DASH stream"
+	},
+	"kindFile": {
+		"message": "$EXT$ file",
+		"placeholders": {
+			"ext": {
+				"content": "$1"
+			}
+		}
+	},
+	"kindAudio": {
+		"message": "Audio"
+	},
+	"live": {
+		"message": "Live"
+	},
+	"best": {
+		"message": "Best available"
+	},
+	"download": {
+		"message": "Download"
+	},
+	"record": {
+		"message": "Record"
+	},
+	"audioOnly": {
+		"message": "Audio only"
+	},
+	"blocked": {
+		"message": "Protected with $DRM$, so it can't be saved.",
+		"placeholders": {
+			"drm": {
+				"content": "$1"
+			}
+		}
+	},
+	"cancel": {
+		"message": "Cancel"
+	},
+	"stopAndSave": {
+		"message": "Stop and save"
+	},
+	"clear": {
+		"message": "Clear"
+	},
+	"stateRunning": {
+		"message": "Downloading"
+	},
+	"stateRecording": {
+		"message": "Recording"
+	},
+	"stateSaving": {
+		"message": "Saving to Downloads"
+	},
+	"stateDone": {
+		"message": "Saved to Downloads"
+	},
+	"stateCanceled": {
+		"message": "Canceled"
+	},
+	"stateFailed": {
+		"message": "Failed: $ERROR$",
+		"placeholders": {
+			"error": {
+				"content": "$1"
+			}
+		}
+	},
+	"subtitles": {
+		"message": "Save subtitles…"
+	}
+}
