@@ -278,6 +278,30 @@ try {
 		await page.close();
 	}
 
+	// The tab title says nothing about one video on a profile page; its own title is overlaid on the picture.
+	{
+		writeFileSync(join(fixtures, 'overlay.html'), `<!doctype html><title>Someone's profile</title>
+			<style>.player { position: relative; width: 640px; height: 360px } video { width: 100%; height: 100% } .info { position: absolute; left: 8px; bottom: 8px; color: white }</style>
+			<div class="player"><video src="/short.mp4" muted autoplay loop></video>
+				<div class="info"><div>@someone</div><div>3 days ago</div><div>Episode 12: why the machine never stops</div><div>A much longer line of description text that carries on well past the headline above it.</div></div>
+				<div class="bullet">short</div></div>
+			<p>An unrelated and considerably longer paragraph elsewhere on the page, such as a comment, which must not be mistaken for the title of the video that is playing.</p>`);
+		const page = await context.newPage();
+		await page.goto(`${server.origin}/overlay.html`);
+		await page.waitForFunction(() => !document.querySelector('video')!.paused);
+		const popup = await openPopup(page);
+		const title = popup.locator('.item .title', { hasText: 'Episode 12: why the machine never stops' });
+		const found = await title.waitFor({ timeout: 20_000 }).then(() => true, () => false);
+		check(found, `overlay title: taken from the text over the video (${await popup.locator('.item .title').first().textContent()})`);
+		await popup.getByTestId('download').click();
+		await popup.locator('[data-testid="finished-list"] [data-testid="job"]').first().waitFor({ timeout: 60_000 });
+		const name = await popup.locator('[data-testid="finished-list"] .title').first().textContent();
+		check(name === 'Episode 12 why the machine never stops.mp4', `overlay title: used for the saved file (${name})`);
+		await popup.getByTestId('clear').first().click();
+		await popup.close();
+		await page.close();
+	}
+
 	// A page handed to yt-dlp through the native bridge: found on request, downloaded by yt-dlp itself.
 	{
 		writeFileSync(join(fixtures, 'bridge.html'), '<!doctype html><title>Bridge fixture</title><video src="/direct.mp4" controls></video>');

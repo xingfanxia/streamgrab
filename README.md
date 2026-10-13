@@ -18,6 +18,9 @@ Two things that pages do are handled for you. When a player fetches a video's pi
 files, they are shown as one item and merged on download. And on a feed that preloads the videos after the one you
 are watching, the one that is playing is shown and the rest wait behind a toggle.
 
+An item is named after the video itself where the page says what it is (through the Media Session API, or in the
+text a player lays over the picture), and after the tab otherwise.
+
 Each item shows a frame of the video, its length and its size (estimated for streams), so several videos on one
 page can be told apart. The list can be filtered by length and sorted by length or size.
 

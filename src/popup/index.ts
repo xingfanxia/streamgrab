@@ -117,7 +117,7 @@ const renderOptions = (media: DetectedMedia) => {
 
 const renderMediaItem = (media: DetectedMedia, tabTitle: string, playing: boolean) => {
 	// Network-detected media carries no title of its own, so it takes the tab's current one, as the saved file will.
-	const title = (media.kind === 'page' ? media.pageTitle : cleanTitle(tabTitle) || media.pageTitle) || fileNameOf(media.url);
+	const title = media.title || (media.kind === 'page' ? media.pageTitle : cleanTitle(tabTitle) || media.pageTitle) || fileNameOf(media.url);
 
 	const shot = el('div', { className: 'shot' });
 	if (media.thumbnail) {
@@ -284,7 +284,7 @@ const render = (state: State, tab: chrome.tabs.Tab) => {
 	const jobs = Object.values(state.jobs).sort((a, b) => b.startedAt - a.startedAt);
 
 	// The list is only rebuilt when it changes, so progress updates never disturb an open set of options.
-	const signature = media.map(item => `${item.key}|${item.thumbnail ? 1 : 0}|${item.duration ?? ''}|${item.tracks ?? ''}|${item.audioUrl ? 1 : 0}`).join() + tab.title + prefs.sort + prefs.minDuration + playing.join();
+	const signature = media.map(item => `${item.key}|${item.thumbnail ? 1 : 0}|${item.duration ?? ''}|${item.tracks ?? ''}|${item.audioUrl ? 1 : 0}|${item.title ?? ''}`).join() + tab.title + prefs.sort + prefs.minDuration + playing.join();
 	if (signature !== renderedMedia) {
 		renderedMedia = signature;
 		// When it is known what is on screen, the rest (usually a feed's preloaded videos) waits behind a toggle.

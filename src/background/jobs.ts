@@ -105,7 +105,7 @@ export const startDownload = async (command: Extract<UiCommand, { type: 'downloa
 		return;
 	}
 	const kind = media.kind;
-	const title = sanitizeBasename(cleanTitle(tab?.title || media.pageTitle || '') || new URL(media.url).hostname);
+	const title = sanitizeBasename(media.title || cleanTitle(tab?.title || media.pageTitle || '') || new URL(media.url).hostname);
 	const audioOnly = command.audioOnly || !media.hasVideo;
 	const subtitle = media.subtitles?.find(track => track.url === command.subtitleUrl);
 	const ext = subtitle ? 'vtt' : extensionFor(media, audioOnly);

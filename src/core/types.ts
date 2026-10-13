@@ -20,6 +20,8 @@ export type DetectedMedia = {
 	tabId: number;
 	pageUrl?: string;
 	pageTitle?: string;
+	/** Title of this particular video, read from the page around the element that played it. */
+	title?: string;
 	/** Request headers of the page's own request that are replayed when downloading. */
 	replayHeaders: Record<string, string>;
 	/** Container extension for direct files, e.g. `mp4`. */

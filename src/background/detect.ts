@@ -188,26 +188,84 @@ export const onResponseStarted = async (details: chrome.webRequest.OnResponseSta
 };
 
 /**
+ * Runs inside the page. Besides each media element's address and state, it looks for the title of what the element
+ * is showing, because a tab's title says nothing about one video among several on a feed or profile page.
+ */
+const readMediaElements = () => {
+	const sessionTitle = navigator.mediaSession?.metadata?.title?.trim() || '';
+
+	// Players overlay the description on the picture. Taking the nearest container that is no bigger than the
+	// picture keeps to that overlay and away from comments and recommendations around the player.
+	const overlayTitle = (element: Element): string => {
+		const box = element.getBoundingClientRect();
+		const area = box.width * box.height;
+		if (area === 0) {
+			return '';
+		}
+
+		for (let node = element.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
+			const rect = node.getBoundingClientRect();
+			if (rect.width * rect.height > area * 1.5) {
+				break;
+			}
+			const lines = node.innerText.split('\n').map(line => line.trim());
+			const longest = lines.reduce((best, line) => (line.length > best.length ? line : best), '');
+			if (longest.length < 8) {
+				continue;
+			}
+
+			// The longest line sits in the description. A description opens with its headline, so the title is
+			// the first of the run of text lines that the longest one belongs to.
+			// Short lines before it (an author's handle, a date) are not part of the description.
+			let first = lines.indexOf(longest);
+			while (first > 0 && lines[first - 1]!.length >= 12 && !lines[first - 1]!.startsWith('@')) {
+				first--;
+			}
+			const title = lines[first]!;
+			return title.replace(/\s+/g, ' ').slice(0, 120);
+		}
+		return '';
+	};
+
+	const elements = [...document.querySelectorAll<HTMLMediaElement>('video, audio')];
+	const playingCount = elements.filter(element => !element.paused && !element.ended).length;
+	return elements.map(element => {
+		const playing = !element.paused && !element.ended;
+		return {
+			url: element.currentSrc || element.src || element.querySelector('source')?.src || '',
+			video: element instanceof HTMLVideoElement,
+			duration: Number.isFinite(element.duration) ? element.duration : undefined,
+			playing,
+			// What the page declares as now playing is only attributable when a single element is playing.
+			title: playing ? (playingCount === 1 && sessionTitle) || overlayTitle(element) : '',
+			page: location.href,
+		};
+	});
+};
+
+/**
  * Lists the media elements already on the page. This covers what network detection misses: media that started
  * before the extension was loaded, came from the browser cache, or has not been played yet.
  */
 export const scanPage = async (tabId: number) => {
-	const results = await chrome.scripting.executeScript({
-		target: { tabId, allFrames: true },
-		func: () => [...document.querySelectorAll<HTMLMediaElement>('video, audio')].map(element => ({
-			url: element.currentSrc || element.src || element.querySelector('source')?.src || '',
-			video: element instanceof HTMLVideoElement,
-			duration: Number.isFinite(element.duration) ? element.duration : undefined,
-			playing: !element.paused && !element.ended,
-			page: location.href,
-		})),
-	}).catch(() => []);
+	const results = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: readMediaElements }).catch(() => []);
 
 	const elements = results.flatMap(frame => frame.result ?? []);
 	// Players that feed the element through a blob hide its address, but the running time still identifies which
 	// of the detected files is the one on screen.
 	await mutate(state => {
 		state.playing[tabId] = elements.flatMap(element => (element.playing && element.duration ? [element.duration] : []));
+		// A title belongs to the item with the running time of the element it was read beside.
+		for (const element of elements) {
+			if (!element.title || !element.duration) {
+				continue;
+			}
+			for (const item of Object.values(state.media[tabId] ?? {})) {
+				if (item.kind !== 'page' && item.duration !== undefined && Math.abs(item.duration - element.duration) < 0.5) {
+					item.title = element.title;
+				}
+			}
+		}
 	});
 
 	const tab = await chrome.tabs.get(tabId).catch(() => null);
