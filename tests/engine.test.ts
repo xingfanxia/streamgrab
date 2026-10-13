@@ -167,6 +167,40 @@ describe.skipIf(!existsSync(FIXTURES))('engine against local fixtures', () => {
 			}
 		});
 
+		it('continues a file that already holds its first part, asking only for the rest', async () => {
+			const asked: number[] = [];
+			const server = await awkward((range, file, response) => {
+				const [start, end] = range!;
+				asked.push(start);
+				response.writeHead(206, { 'Content-Range': `bytes ${start}-${end}/${file.length}`, 'Content-Length': end - start + 1 }).end(file.subarray(start, end + 1));
+			});
+			try {
+				const chunks: Uint8Array[] = [source().subarray(0, 400_000)];
+				await downloadFile(server.url, async chunk => {
+					chunks.push(chunk.slice());
+				}, hooks(), { from: 400_000, restart: async () => { chunks.length = 0; } });
+				expect(Buffer.concat(chunks).equals(source())).toBe(true);
+				expect(asked).toEqual([400_000]);
+			} finally {
+				server.close();
+			}
+		});
+
+		it('starts over when asked to continue from a server that ignores Range', async () => {
+			const server = await awkward((_range, file, response) => {
+				response.writeHead(200, { 'Content-Length': file.length }).end(file);
+			});
+			try {
+				const chunks: Uint8Array[] = [Buffer.from('stale partial data')];
+				await downloadFile(server.url, async chunk => {
+					chunks.push(chunk.slice());
+				}, hooks(), { from: 18, restart: async () => { chunks.length = 0; } });
+				expect(Buffer.concat(chunks).equals(source())).toBe(true);
+			} finally {
+				server.close();
+			}
+		});
+
 		it('fails rather than saving a truncated file when the rest never comes', async () => {
 			const server = await awkward((range, file, response) => {
 				const [start] = range!;

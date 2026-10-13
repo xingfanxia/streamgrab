@@ -146,15 +146,27 @@ const execute = async (
 	file: FileSystemFileHandle,
 	noteBytes: (end: number) => void,
 ) => {
-	const writable = await file.createWritable();
-	let position = 0;
+	// A plain file keeps what an earlier, interrupted round already fetched and carries on from there.
+	const plain = request.kind === 'file' && !request.audioUrl;
+	const kept = plain ? (await file.getFile()).size : 0;
+	const writable = await file.createWritable({ keepExistingData: plain });
+	let position = kept;
 
 	try {
-		if (request.kind === 'file' && !request.audioUrl) {
+		if (plain) {
+			await writable.seek(kept);
+			noteBytes(kept);
 			await downloadFile(request.url, async chunk => {
 				await writable.write(chunk);
 				noteBytes(position += chunk.byteLength);
-			}, hooks);
+			}, hooks, {
+				from: kept,
+				restart: async () => {
+					await writable.truncate(0);
+					await writable.seek(0);
+					position = 0;
+				},
+			});
 			await writable.close();
 			return;
 		}
@@ -209,7 +221,8 @@ const execute = async (
 			: summary.videos.find(track => track.id === request.variant?.id) ?? summary.videos[0] ?? null;
 		await downloadDash(video, summary.audios[0] ?? null, target, hooks);
 	} catch (error) {
-		await writable.abort().catch(() => {});
+		// Closing, rather than aborting, keeps what a plain file has received so the next round can continue it.
+		await (plain ? writable.close() : writable.abort()).catch(() => {});
 		throw error;
 	}
 };
@@ -273,9 +286,11 @@ const run = async (request: JobRequest) => {
 			backOff(host);
 			endTurn();
 			endTurn = () => {};
-			await root.removeEntry(request.opfsName).catch(() => {});
-			bytes = 0;
-			progress = 0;
+			if (request.kind !== 'file' || request.audioUrl) {
+				await root.removeEntry(request.opfsName).catch(() => {});
+				bytes = 0;
+				progress = 0;
+			}
 			await send({ from: 'engine', type: 'waiting', jobId: request.jobId });
 		}
 

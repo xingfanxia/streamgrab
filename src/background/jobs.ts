@@ -214,9 +214,8 @@ export const onEngineEvent = async (event: EngineEvent) => {
 		await mutate(state => {
 			const job = state.jobs[event.jobId];
 			if (job?.state === 'running') {
+				// Progress is kept: a plain file continues from where it was, and the rest report afresh.
 				job.state = 'queued';
-				job.progress = 0;
-				job.bytes = 0;
 			}
 		});
 		return;
