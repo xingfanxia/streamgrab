@@ -40,6 +40,7 @@ What it does not do
 • No accounts, limits, ads, analytics or telemetry. streamgrab has no server and sends nothing to its developer.
 
 Open source under the MIT licence: https://github.com/xingfanxia/streamgrab
+Includes Mediabunny (MPL-2.0), source: https://github.com/Vanilagy/mediabunny
 
 Only save media you have the right to keep.
 ```
@@ -69,6 +70,7 @@ streamgrab 把当前页面正在播放的视频或音频直接保存到你的“
 • 无账号、无限制、无广告、无统计、无遥测。streamgrab 没有自己的服务器，不向开发者发送任何数据。
 
 基于 MIT 许可证开源：https://github.com/xingfanxia/streamgrab
+内含 Mediabunny（MPL-2.0），源码：https://github.com/Vanilagy/mediabunny
 
 请只保存你有权保留的内容。
 ```
