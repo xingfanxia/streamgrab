@@ -5,10 +5,13 @@
   "scripts": {
     "test": "vitest run",
     "build": "node scripts/build.mjs",
+    "build:store": "node scripts/build.mjs --store",
+    "package:store": "node scripts/package-store.mjs",
     "dev": "node scripts/build.mjs --watch",
     "typecheck": "tsc",
     "fixtures": "scripts/e2e/make-fixtures.sh scratch/data/fixtures",
     "e2e": "npm run build && tsx scripts/e2e/run.ts",
+    "e2e:store": "npm run build:store && tsx scripts/e2e/store.ts",
     "install-host": "node scripts/install-host.mjs"
   },
   "license": "MIT",

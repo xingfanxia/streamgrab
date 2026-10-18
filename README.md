@@ -39,6 +39,20 @@ npm run build
 Then open `chrome://extensions`, turn on Developer mode, choose **Load unpacked** and select the `dist` folder.
 Play a video, click the extension icon, and press Download. Files land in your normal downloads folder.
 
+## Chrome Web Store version
+
+`npm run build:store` builds a second variant into `dist-store/`, and `npm run package:store` zips it as
+`release/streamgrab-store-<version>.zip` for upload. It is the same extension with two things removed:
+
+- **No yt-dlp bridge.** Its code is left out of the bundle, and the manifest drops `nativeMessaging`, `cookies`,
+  `tabs` and the `key` that pins the extension ID for the native host.
+- **No YouTube.** Nothing is offered on YouTube's pages or for media streamed from its servers, wherever it is
+  embedded; the popup says so on a YouTube tab. The rule is `isExcludedFromStore` in `src/core/sites.ts`.
+
+The code is shared: `__STORE__`, set at build time, decides which branches go in. The privacy policy is
+[`docs/privacy.md`](docs/privacy.md), and the listing text, permission justifications and images are in
+[`docs/store/`](docs/store/listing.md).
+
 ## How downloads behave
 
 - **Plain files are fetched in pieces**, the way a player fetches them, and a piece that breaks is continued from
@@ -105,7 +119,10 @@ npm run typecheck
 npm run fixtures   # generates local test media with ffmpeg
 npm test           # unit tests, plus the engine against the fixtures
 npm run e2e        # loads the extension into Chromium and downloads every fixture through the popup
+npm run e2e:store  # the store build: its manifest, a download, and nothing offered on YouTube
 ```
+
+`npx tsx scripts/store/images.ts` remakes the store screenshots and promo tile in `docs/store/` from the store build.
 
 `npm run fixtures` and the checks that use it need `ffmpeg` and `ffprobe` on the path.
 

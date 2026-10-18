@@ -20,6 +20,16 @@ export const isPageSite = (url: string | undefined): boolean => (
 	isFragmentSite(url) || hostMatches(/(^|\.)(xiaohongshu\.com|xhslink\.com|weibo\.com|instagram\.com|tiktok\.com)$/)(url)
 );
 
+/** YouTube's own pages, its embedded player, and the hosts that player streams from. */
+export const isYouTubeAddress = hostMatches(/(^|\.)(youtube\.com|youtube-nocookie\.com|youtu\.be|googlevideo\.com)$/);
+
+/**
+ * Whether the Chrome Web Store version must offer nothing for media seen at these addresses: the media's own, the
+ * page's, and the one that requested it. That version does not save from YouTube at all; the full version leaves
+ * YouTube to yt-dlp.
+ */
+export const isExcludedFromStore = (...urls: (string | undefined)[]): boolean => urls.some(isYouTubeAddress);
+
 /**
  * Rewrites a page address into the form yt-dlp recognises, for sites that show a video in an overlay on top of a
  * feed and keep the feed's address with the video's id in the query string.

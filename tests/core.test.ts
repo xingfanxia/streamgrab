@@ -140,6 +140,31 @@ describe('site lists', () => {
 		expect(isPageSite(undefined)).toBe(false);
 	});
 
+	it('excludes YouTube pages, its embedded player and its media hosts from the store version, and nothing else', async () => {
+		const { isExcludedFromStore, isYouTubeAddress } = await import('../src/core/sites');
+		for (const url of [
+			'https://www.youtube.com/watch?v=x',
+			'https://youtube.com/shorts/x',
+			'https://m.youtube.com/watch?v=x',
+			'https://music.youtube.com/watch?v=x',
+			'https://youtu.be/x',
+			'https://www.youtube-nocookie.com/embed/x',
+			'https://rr3---sn-a5mekn6s.googlevideo.com/videoplayback?expire=1&itag=18',
+			'https://manifest.googlevideo.com/api/manifest/hls_variant/x/index.m3u8',
+		]) {
+			expect(isYouTubeAddress(url), url).toBe(true);
+		}
+		for (const url of ['https://notyoutube.com/', 'https://youtube.com.example.org/', 'https://vimeo.com/1', 'https://cdn.example.com/youtube.com/v.mp4', 'blob:https://www.example.com/1', 'not a url', undefined]) {
+			expect(isYouTubeAddress(url), String(url)).toBe(false);
+		}
+		// Media is excluded when any of its addresses is YouTube's: a file on a CDN played inside a YouTube tab,
+		// or YouTube's stream embedded in some other page.
+		expect(isExcludedFromStore('https://cdn.example.com/v.mp4', 'https://www.youtube.com/watch?v=x')).toBe(true);
+		expect(isExcludedFromStore('https://rr1---sn-x.googlevideo.com/videoplayback', 'https://blog.example.com/post')).toBe(true);
+		expect(isExcludedFromStore('https://cdn.example.com/v.mp4', 'https://blog.example.com/post', undefined)).toBe(false);
+		expect(isExcludedFromStore()).toBe(false);
+	});
+
 	it('turns a feed address with a video overlay into the video address', async () => {
 		const { pageUrlForYtDlp } = await import('../src/core/sites');
 		expect(pageUrlForYtDlp('https://www.douyin.com/jingxuan?modal_id=7695696443977387273')).toBe('https://www.douyin.com/video/7695696443977387273');

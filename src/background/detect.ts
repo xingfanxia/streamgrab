@@ -3,7 +3,7 @@ import { classify, extensionOf, type Classification } from '../core/classify';
 import { summarizeHls } from '../core/m3u8';
 import { summarizeDash } from '../core/mpd';
 import { hashString } from '../core/naming';
-import { isFragmentSite } from '../core/sites';
+import { isExcludedFromStore, isFragmentSite } from '../core/sites';
 import type { DetectedMedia } from '../core/types';
 import { fetchWithHeaders, pickReplayHeaders } from './headers';
 import { previewTab } from './previews';
@@ -80,6 +80,9 @@ const addressOf = (media: DetectedMedia) => {
 const isManifest = (media: DetectedMedia) => media.kind === 'hls' || media.kind === 'dash';
 
 const register = async (media: DetectedMedia) => {
+	if (__STORE__ && isExcludedFromStore(media.url, media.pageUrl)) {
+		return;
+	}
 	await mutate(state => {
 		const tab = state.media[media.tabId] ??= {};
 		if (tab[media.key]) {
@@ -171,6 +174,10 @@ export const onResponseStarted = async (details: chrome.webRequest.OnResponseSta
 	}
 
 	if (found.viaScript && isFragmentSite(details.initiator)) {
+		return;
+	}
+	// Checked again in `register` against the tab's address; here it saves fetching YouTube's manifests at all.
+	if (__STORE__ && isExcludedFromStore(details.url, details.initiator)) {
 		return;
 	}
 
@@ -271,6 +278,9 @@ const readMediaElements = () => {
  * before the extension was loaded, came from the browser cache, or has not been played yet.
  */
 export const scanPage = async (tabId: number) => {
+	if (__STORE__ && isExcludedFromStore((await chrome.tabs.get(tabId).catch(() => null))?.url)) {
+		return;
+	}
 	const results = await chrome.scripting.executeScript({ target: { tabId, allFrames: true }, func: readMediaElements }).catch(() => []);
 
 	const elements = results.flatMap(frame => frame.result ?? []);

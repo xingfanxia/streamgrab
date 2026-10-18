@@ -42,7 +42,7 @@ chrome.runtime.onMessage.addListener((message: unknown, _sender, respond) => {
 		void revealJob(command.jobId);
 	} else if (command?.type === 'clearFinished') {
 		void clearFinished();
-	} else if (command?.type === 'probe') {
+	} else if (!__STORE__ && command?.type === 'probe') {
 		void probePage(command.tabId);
 	} else if (command?.type === 'scan') {
 		void scanPage(command.tabId);

@@ -119,7 +119,9 @@ export const startDownload = async (command: Extract<UiCommand, { type: 'downloa
 
 	const tab = await chrome.tabs.get(command.tabId).catch(() => null);
 	if (media.kind === 'page') {
-		await startPageDownload(media, command);
+		if (!__STORE__) {
+			await startPageDownload(media, command);
+		}
 		return;
 	}
 	const kind = media.kind;
@@ -165,7 +167,7 @@ export const startDownload = async (command: Extract<UiCommand, { type: 'downloa
 };
 
 export const stopDownload = (jobId: string, keep: boolean) => (
-	stopPageDownload(jobId) || sendToEngine({ to: 'engine', type: 'stop', jobId, keep })
+	(!__STORE__ && stopPageDownload(jobId)) || sendToEngine({ to: 'engine', type: 'stop', jobId, keep })
 );
 
 export const dismissJob = (jobId: string) => mutate(state => {
@@ -176,7 +178,7 @@ export const revealJob = async (jobId: string) => {
 	const job = (await loadState()).jobs[jobId];
 	if (job?.downloadId !== undefined) {
 		chrome.downloads.show(job.downloadId);
-	} else if (job?.path) {
+	} else if (!__STORE__ && job?.path) {
 		await revealPath(job.path);
 	}
 };

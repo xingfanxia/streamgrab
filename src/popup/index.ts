@@ -1,6 +1,6 @@
 import { arrange, DEFAULT_PREFS, estimateSize, isPlaying, type ListPrefs } from '../core/arrange';
 import { cleanTitle } from '../core/naming';
-import { isPageSite } from '../core/sites';
+import { isExcludedFromStore, isPageSite } from '../core/sites';
 import type { DetectedMedia, Job, Variant } from '../core/types';
 import { emptyState, STATE_KEY, type State, type UiCommand } from '../shared/messages';
 
@@ -58,7 +58,7 @@ const formatDuration = (seconds: number) => {
 };
 
 const kindTag = (media: DetectedMedia) => {
-	if (media.kind === 'page') {
+	if (!__STORE__ && media.kind === 'page') {
 		return media.site || 'yt-dlp';
 	}
 	return media.kind === 'file' ? (media.ext ?? 'file').toUpperCase() : media.kind.toUpperCase();
@@ -303,8 +303,10 @@ const renderProbe = (state: State, tab: chrome.tabs.Tab, found: boolean) => {
 
 const render = (state: State, tab: chrome.tabs.Tab) => {
 	const tabId = tab.id!;
+	// The store version offers nothing from YouTube, and says so in place of the usual empty note.
+	const excluded = __STORE__ && isExcludedFromStore(tab.url);
 	// A page item belongs to one address; on sites that navigate without reloading, older ones no longer apply.
-	const current = Object.values(state.media[tabId] ?? {}).filter(item => item.kind !== 'page' || item.url === tab.url);
+	const current = excluded ? [] : Object.values(state.media[tabId] ?? {}).filter(item => item.kind !== 'page' || item.url === tab.url);
 	// Where yt-dlp has answered for a site it knows, its result stands in for the plain files found there.
 	const answered = isPageSite(tab.url) && current.some(item => item.kind === 'page');
 	const all = answered ? current.filter(item => item.kind !== 'file') : current;
@@ -352,7 +354,9 @@ const render = (state: State, tab: chrome.tabs.Tab) => {
 	byId('count').textContent = t('mediaHeading', String(all.length));
 	hiddenNote.hidden = hidden === 0;
 	hiddenNote.textContent = t('hiddenByFilter', String(hidden));
-	renderProbe(state, tab, all.some(item => item.kind === 'page'));
+	if (!__STORE__) {
+		renderProbe(state, tab, all.some(item => item.kind === 'page'));
+	}
 
 	const running = jobs.filter(job => job.state === 'running' || job.state === 'saving' || job.state === 'queued');
 	const finished = jobs.filter(job => !running.includes(job));
@@ -362,6 +366,11 @@ const render = (state: State, tab: chrome.tabs.Tab) => {
 	byId('clear-finished').hidden = finished.length < 2;
 
 	emptyNote.hidden = all.length > 0 || state.probes[tabId]?.status === 'running';
+	if (__STORE__) {
+		byId('empty-title').textContent = t(excluded ? 'noYouTubeTitle' : 'emptyTitle');
+		byId('empty-text').textContent = t(excluded ? 'noYouTube' : 'empty');
+		emptyNote.dataset.reason = excluded ? 'youtube' : '';
+	}
 };
 
 const main = async () => {
@@ -425,7 +434,7 @@ const main = async () => {
 	void send({ type: 'scan', tabId });
 	setInterval(() => void send({ type: 'scan', tabId }), 1500);
 	// On sites yt-dlp is known to handle, the page is checked straight away.
-	if (isPageSite(tab.url)) {
+	if (!__STORE__ && isPageSite(tab.url)) {
 		void send({ type: 'probe', tabId });
 	}
 };

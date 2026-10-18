@@ -178,5 +178,11 @@
 	},
 	"copyText": {
 		"message": "复制"
+	},
+	"noYouTubeTitle": {
+		"message": "不支持 YouTube"
+	},
+	"noYouTube": {
+		"message": "Chrome 应用商店版 streamgrab 不保存 YouTube 上的视频或音频。"
 	}
 }

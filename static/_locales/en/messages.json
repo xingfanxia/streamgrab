@@ -178,5 +178,11 @@
 	},
 	"copyText": {
 		"message": "Copy"
+	},
+	"noYouTubeTitle": {
+		"message": "YouTube isn't supported"
+	},
+	"noYouTube": {
+		"message": "The Chrome Web Store version of streamgrab doesn't save video or audio from YouTube."
 	}
 }
